@@ -65,7 +65,7 @@ pub async fn msg_sys(main_config: MainConfig, msg_chan: std::sync::mpsc::Receive
             continue;
         }
         let msg: MsgGet = match serde_json::from_str(msg.as_str()){
-            Ok(msg) => msg,
+            Ok(msg_struct) => {debug!("{:?}",msg_struct);msg_struct},
             Err(e) => {error!("{}",e);continue},
         };
         if msg.post_type != "message"{

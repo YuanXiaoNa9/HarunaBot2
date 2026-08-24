@@ -14,7 +14,7 @@ struct AppState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(tracing::Level::INFO)
         .init();
     //读取配置文件
     let main_config = get_config("main_config.yaml");
