@@ -6,6 +6,7 @@ use crate::main_config::{MainConfig, get_config};
 use crate::msg_sys::func_config::FuncConfig;
 use crate::msg_sys::msg_sys::msg_sys;
 use crate::qq_link::qq_link;
+use tracing_subscriber::fmt::SubscriberBuilder;
 
 struct AppState {
     main_config: MainConfig,
@@ -15,6 +16,7 @@ struct AppState {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
+        .with_target(false)
         .init();
     //读取配置文件
     let main_config = get_config("main_config.yaml");

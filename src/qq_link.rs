@@ -3,13 +3,14 @@ use futures_util::StreamExt;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use tokio::spawn;
+use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing::{error, info};
 
-pub async fn qq_link(main_config: &MainConfig) -> Receiver<String> {
+pub async fn qq_link(main_config: &MainConfig) -> tokio::sync::mpsc::Receiver<String> {
     //创建消息通道
-    let (chan_sender, chan_receiver) = std::sync::mpsc::channel();
+    let (chan_sender, chan_receiver) = tokio::sync::mpsc::channel(200);
     //构建ws链接
     let request = format!(
         "{}/?access_token={}",
@@ -24,10 +25,7 @@ pub async fn qq_link(main_config: &MainConfig) -> Receiver<String> {
     chan_receiver
 }
 
-async fn data_get(
-    request: tungstenite::handshake::server::Request,
-    chan_sender: std::sync::mpsc::Sender<String>,
-) {
+async fn data_get(request: tungstenite::handshake::server::Request, chan_sender: Sender<String>) {
     loop {
         let request = request.clone();
         let res = tokio_tungstenite::connect_async(request).await;
@@ -44,7 +42,7 @@ async fn data_get(
         //循环接收消息
         loop {
             let msg = get.next().await.unwrap().unwrap().to_string();
-            chan_sender.send(msg).unwrap();
+            chan_sender.send(msg).await.unwrap();
         }
     }
 }
