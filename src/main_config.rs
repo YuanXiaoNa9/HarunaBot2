@@ -14,9 +14,9 @@ pub struct MainConfig {
     pub white_list: Vec<i64>,
 }
 
-pub(crate) fn get_config(file_name: &str) -> MainConfig {
+pub(crate) fn get_config() -> MainConfig {
     //读取文件并存入string
-    let res_config_str = std::fs::read_to_string(file_name);
+    let res_config_str = std::fs::read_to_string("main_config.yaml");
     //出现err则创建文件并写入默认内容
     if res_config_str.is_err() {
         error!("Failed to read config file");
@@ -47,7 +47,7 @@ pub(crate) fn get_config(file_name: &str) -> MainConfig {
     let config: MainConfig = res_config.unwrap();
     let new_config_str: String = serde_yaml::to_string(&config).unwrap();
     if new_config_str != config_str {
-        std::fs::write(file_name, new_config_str).expect("TODO: panic message");
+        std::fs::write("main_config.yaml", new_config_str).expect("TODO: panic message");
     }
     config
 }

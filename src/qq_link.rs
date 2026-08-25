@@ -1,6 +1,5 @@
-use crate::main_config::MainConfig;
+use crate::MAIN_CONFIG;
 use futures_util::StreamExt;
-use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
@@ -8,13 +7,13 @@ use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing::{error, info};
 
-pub async fn qq_link(main_config: &MainConfig) -> tokio::sync::mpsc::Receiver<String> {
+pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     //创建消息通道
     let (chan_sender, chan_receiver) = tokio::sync::mpsc::channel(200);
     //构建ws链接
     let request = format!(
         "{}/?access_token={}",
-        main_config.ws_ip_port, main_config.ws_token
+        MAIN_CONFIG.ws_ip_port, MAIN_CONFIG.ws_token
     )
     .into_client_request()
     .unwrap();

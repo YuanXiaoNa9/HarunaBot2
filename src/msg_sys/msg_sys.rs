@@ -1,9 +1,12 @@
-use crate::main_config::MainConfig;
+use crate::MAIN_CONFIG;
 use crate::msg_sys::msg_func::test::Test;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{ LazyLock};
+use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info};
+
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct MsgSender {
@@ -33,20 +36,18 @@ pub struct Msg {
     pub sender: MsgSender,
 }
 
+static MSG_HANDLERS: LazyLock<Vec<Box<dyn MsgHandler + Send + Sync>>> =
+    LazyLock::new(|| vec![Box::new(Test)]);
+
+#[async_trait]
 pub trait MsgHandler {
     fn matches(&self, _: &Msg) -> bool;
-    fn process(&self, _: &Msg);
-}
-impl Msg {
-    pub(crate) fn send(&self) {
-        println!("send ok");
-    }
+    async fn process(&self, _: Msg);
 }
 
-pub async fn msg_sys(main_config: MainConfig, mut msg_chan: Receiver<String>) {
-    let msg_handlers: Arc<Vec<Box<dyn MsgHandler>>> = Arc::new(vec![Box::new(Test)]);
+pub async fn msg_sys(mut msg_chan: Receiver<String>) {
     loop {
-        let msg_handlers = msg_handlers.clone();
+        //从通道中取出json消息
         let msg: String = match msg_chan.recv().await {
             None => {
                 error!("消息接收出现错误");
@@ -54,32 +55,55 @@ pub async fn msg_sys(main_config: MainConfig, mut msg_chan: Receiver<String>) {
             }
             Some(i) => i,
         };
+        //判断是否为空字符串（心跳）
         if msg == "" {
             continue;
         }
-
-        let msg: Msg = match serde_json::from_str(msg.as_str()) {
-            Ok(msg_struct) => {
-                debug!("{:?}", msg_struct);
-                msg_struct
+        //后台执行
+        spawn(async move {
+            //使用MsgGet结构体进行解析
+            let msg: Msg = match serde_json::from_str(msg.as_str()) {
+                Ok(msg_struct) => {
+                    debug!("{:?}", msg_struct);
+                    msg_struct
+                }
+                Err(e) => {
+                    error!("{}", e);
+                    return;
+                }
+            };
+            //判断是否为文字消息
+            if msg.post_type != "message" {
+                return;
             }
-            Err(e) => {
-                error!("{}", e);
-                continue;
+            for black_id in MAIN_CONFIG.black_list.iter() {
+                if msg.sender.user_id == *black_id {
+                    info!(
+                        "黑名单用户：{}({})",
+                        msg.sender.nickname, msg.sender.user_id
+                    );
+                    return;
+                }
             }
-        };
-        if msg.post_type != "message" {
-            continue;
-        }
-        info!("{}:{}", msg.sender.user_id, msg.raw_message);
-        dispatch(&msg, msg_handlers);
+            //打印消息日志
+            info!("{}:{}", msg.sender.user_id, msg.raw_message);
+            //进行解析
+            dispatch(msg).await;
+        });
     }
 }
 
-fn dispatch(msg: &Msg, handlers: Arc<Vec<Box<dyn MsgHandler>>>) {
-    for handler in handlers.iter() {
+async fn dispatch(msg: Msg) {
+    debug!("finding handler");
+    //取出handler
+    for handler in MSG_HANDLERS.iter() {
+        //使用handler的match方法进行判断消息是否符合
         if handler.matches(&msg) {
-            handler.process(&msg);
+            debug!("find handler ok");
+            //如果符合则调用该handler的process方法
+            handler.process(msg).await;
+            return;
         }
     }
+    debug!("not find handler");
 }
