@@ -7,16 +7,14 @@ use crate::msg_sys::msg_sys::msg_sys;
 use crate::qq_link::qq_link;
 use reqwest::Client;
 use std::sync::LazyLock;
+use crate::msg_sys::init_tracing::init_tracing;
 
 static MAIN_CONFIG: LazyLock<MainConfig> = LazyLock::new(|| get_config());
 static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| Client::new());
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_target(false)
-        .init();
-    //读取配置文件
+    //初始化日志
+    init_tracing();
     //连接qq
     let msg_chan = qq_link().await;
 
