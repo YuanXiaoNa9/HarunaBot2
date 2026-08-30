@@ -151,7 +151,7 @@ async fn bw_right(msg: &Msg) -> bool {
 fn log_msg(msg:&Msg){
     if msg.message_type == "group" {
         info!(
-                    "{}({}) {}({}) => <{}>",
+                    "[{}] ({}) [{}] ({}) => <{}>",
                     msg.group_name,
                     msg.group_id,
                     msg.sender.nickname,
