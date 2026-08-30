@@ -1,11 +1,10 @@
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{Msg, MsgHandler};
 use async_trait::async_trait;
-use core::str::Split;
 use std::sync::Arc;
 use tracing::debug;
-pub struct TTT{
-    status:bool,
+pub struct TTT {
+    status: bool,
 }
 #[async_trait]
 impl MsgHandler for TTT {
@@ -31,8 +30,7 @@ impl MsgHandler for TTT {
         rep.send_msg(msg.clone()).await;
     }
 
-    async fn init(&mut self) {
-    }
+    async fn init(&mut self) {}
 
     async fn status(&self) -> bool {
         self.status
