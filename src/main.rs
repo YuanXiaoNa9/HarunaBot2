@@ -10,8 +10,6 @@ use crate::main_config::{MainConfig, get_config};
 use crate::msg_sys::msg_sys::msg_sys;
 use crate::qq_link::qq_link;
 use reqwest::Client;
-use std::env;
-use std::string::ToString;
 use std::sync::LazyLock;
 static PATH: LazyLock<String> = LazyLock::new(|| env::current_dir().unwrap().display().to_string());
 static MAIN_CONFIG: LazyLock<MainConfig> = LazyLock::new(|| get_config());
