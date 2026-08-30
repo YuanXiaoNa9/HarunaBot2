@@ -1,21 +1,21 @@
-use core::str::Split;
 use crate::MAIN_CONFIG;
 use crate::msg_sys::msg_func::test::Test;
+use crate::msg_sys::msg_func::ttt::TTT;
 use async_trait::async_trait;
+use core::str::Split;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info};
-use crate::msg_sys::msg_func::ttt::TTT;
 
 //注册功能函数
 static MSG_HANDLERS: LazyLock<Vec<Box<dyn MsgHandler + Send + Sync>>> =
-    LazyLock::new(|| vec![Box::new(Test),Box::new(TTT)]);
+    LazyLock::new(|| vec![Box::new(Test), Box::new(TTT)]);
 #[async_trait]
 pub trait MsgHandler {
-    async fn matches(&self, _: Arc<Msg>, _:&Split<&str>) -> bool;
-    async fn process(&self, _: Arc<Msg>,_:&Split<&str>);
+    async fn matches(&self, _: Arc<Msg>) -> bool;
+    async fn process(&self, _: Arc<Msg>);
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -46,8 +46,6 @@ pub struct Msg {
     pub font: i16,
     pub sender: MsgSender,
 }
-
-
 
 pub async fn msg_sys(mut msg_chan: Receiver<String>) {
     loop {
@@ -89,10 +87,20 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
                     return;
                 }
             }
-            if msg.message_type == "group"{
-                info!("{}({}) => {}({}): <{}>",msg.group_name,msg.group_id,msg.sender.nickname, msg.sender.user_id, msg.raw_message);
-            }else if msg.message_type == "private"{
-                info!("{}({}): <{}>",msg.sender.nickname, msg.sender.user_id, msg.raw_message);
+            if msg.message_type == "group" {
+                info!(
+                    "{}({}) => {}({}): <{}>",
+                    msg.group_name,
+                    msg.group_id,
+                    msg.sender.nickname,
+                    msg.sender.user_id,
+                    msg.raw_message
+                );
+            } else if msg.message_type == "private" {
+                info!(
+                    "{}({}): <{}>",
+                    msg.sender.nickname, msg.sender.user_id, msg.raw_message
+                );
             }
             //打印消息日志
             //进行解析
@@ -103,14 +111,14 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
 
 async fn dispatch(msg: Msg) {
     debug!("finding handler");
-    let msg=Arc::new(msg);
-    let msg_anal = msg.raw_message.split(" ");
+    let msg = Arc::new(msg);
+    let mut msg_anal = msg.raw_message.split(" ");
     //取出handler
     for handler in MSG_HANDLERS.iter() {
         //使用handler的match方法进行判断消息是否符合
-        if handler.matches(msg.clone(),&msg_anal).await{
+        if handler.matches(msg.clone()).await {
             debug!("find handler");
-            handler.process(msg.clone(), &msg_anal).await;
+            handler.process(msg.clone()).await;
             return;
         }
     }
