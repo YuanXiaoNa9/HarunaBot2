@@ -4,18 +4,19 @@ use crate::msg_sys::msg_func::ttt::TTT;
 use async_trait::async_trait;
 use core::str::Split;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info};
+use crate::msg_sys::msg_func::emoji_mujika::EmoMjk;
 
 //注册功能函数
-static MSG_HANDLERS: LazyLock<Vec<Box<dyn MsgHandler + Send + Sync>>> =
-    LazyLock::new(|| vec![Box::new(Test), Box::new(TTT)]);
 #[async_trait]
 pub trait MsgHandler {
     async fn matches(&self, _: Arc<Msg>) -> bool;
     async fn process(&self, _: Arc<Msg>);
+    async fn init(&mut self);
+    async fn status(&self) -> bool;
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -48,7 +49,11 @@ pub struct Msg {
 }
 
 pub async fn msg_sys(mut msg_chan: Receiver<String>) {
+    //模块初始化
+    let msg_handlers = handler_init().await;
     loop {
+
+
         //从通道中取出json消息
         let msg: String = match msg_chan.recv().await {
             None => {
@@ -61,6 +66,7 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
         if msg == "" {
             continue;
         }
+        let handlers = msg_handlers.clone();
         //后台执行
         spawn(async move {
             //使用MsgGet结构体进行解析
@@ -89,7 +95,7 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
             }
             if msg.message_type == "group" {
                 info!(
-                    "{}({}) => {}({}): <{}>",
+                    "{}({}) {}({}) => <{}>",
                     msg.group_name,
                     msg.group_id,
                     msg.sender.nickname,
@@ -104,23 +110,32 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
             }
             //打印消息日志
             //进行解析
-            dispatch(msg).await;
+            dispatch(handlers,msg).await;
         });
     }
 }
 
-async fn dispatch(msg: Msg) {
+async fn dispatch(msg_handlers:Arc<Vec<Box<dyn MsgHandler+Send+Sync>>>,msg: Msg) {
     debug!("finding handler");
     let msg = Arc::new(msg);
-    let mut msg_anal = msg.raw_message.split(" ");
     //取出handler
-    for handler in MSG_HANDLERS.iter() {
+    for handler in msg_handlers.iter() {
         //使用handler的match方法进行判断消息是否符合
-        if handler.matches(msg.clone()).await {
+        if handler.matches(msg.clone()).await && handler.status().await {
             debug!("find handler");
             handler.process(msg.clone()).await;
             return;
         }
     }
     debug!("not find handler");
+}
+
+async fn handler_init()->Arc<Vec<Box<dyn MsgHandler+Send+Sync>>>{
+    let handlers:Vec<Box<dyn MsgHandler+Send+Sync>> = vec![Box::new(Test{status:true}),Box::new(EmoMjk{status:true, ttf:OnceLock::new()})];
+    let mut init_handlers = Vec::new();
+    for mut handler in handlers {
+        handler.init().await;
+        init_handlers.push(handler);
+    }
+    Arc::new(init_handlers)
 }

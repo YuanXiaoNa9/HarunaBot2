@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use core::str::Split;
 use std::sync::Arc;
 use tracing::debug;
-pub struct TTT;
+pub struct TTT{
+    status:bool,
+}
 #[async_trait]
 impl MsgHandler for TTT {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
@@ -27,5 +29,12 @@ impl MsgHandler for TTT {
         let mut rep = SendMsg::new_msg().await;
         rep.join_text(split.next().unwrap().to_string()).await;
         rep.send_msg(msg.clone()).await;
+    }
+
+    async fn init(&mut self) {
+    }
+
+    async fn status(&self) -> bool {
+        self.status
     }
 }
