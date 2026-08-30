@@ -7,6 +7,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info};
+use crate::msg_sys::msg_func::play::Play;
 
 //注册功能函数
 #[async_trait]
@@ -107,13 +108,7 @@ async fn dispatch(msg_handlers: Arc<Vec<Box<dyn MsgHandler + Send + Sync>>>, msg
 
 async fn handler_init() -> Arc<Vec<Box<dyn MsgHandler + Send + Sync>>> {
     //注册功能模块
-    let handlers: Vec<Box<dyn MsgHandler + Send + Sync>> = vec![
-        Box::new(Test { status: true }),
-        Box::new(EmoMjk {
-            status: true,
-            ttf: OnceLock::new(),
-        }),
-    ];
+    let handlers = handler_regin();
     //创建新的vec存储handler
     let mut init_handlers = Vec::new();
     //取出handler并执行初始化方法
@@ -151,7 +146,7 @@ async fn bw_right(msg: &Msg) -> bool {
 fn log_msg(msg:&Msg){
     if msg.message_type == "group" {
         info!(
-                    "[{}] ({}) [{}] ({}) => <{}>",
+                    "[{}]({}):[{}]({}) => <{}>",
                     msg.group_name,
                     msg.group_id,
                     msg.sender.nickname,
@@ -165,4 +160,15 @@ fn log_msg(msg:&Msg){
                 );
     }
 
+}
+fn handler_regin() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
+    let handlers: Vec<Box<dyn MsgHandler + Send + Sync>> = vec![
+        Box::new(Test { status: true }),
+        Box::new(EmoMjk {
+            status: true,
+            ttf: OnceLock::new(),
+        }),
+        Box::new(Play{status:true})
+    ];
+    handlers
 }
