@@ -83,7 +83,7 @@ impl MsgHandler for EmoMjk {
         let mut rep = SendMsg::new_msg().await;
         rep.join_image(format!("{}/{}.png", PATH.as_str(), file_name).to_string())
             .await;
-        rep.join_text(format!("耗时:{:?}", end_time)).await;
+        rep.join_text(format!("图片生成耗时:{:?}", end_time)).await;
         rep.send_msg(msg).await;
         std::fs::remove_file(format!("{}/{}.png", PATH.as_str(), file_name).to_string()).unwrap();
     }
