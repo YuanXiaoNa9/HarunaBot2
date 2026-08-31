@@ -91,7 +91,7 @@ impl MsgHandler for EmoMjk {
     async fn init(&mut self) -> (String,bool) {
         let name = "母鸡卡表情包".to_string();
         self.ttf = match FontVec::try_from_vec(
-            include_bytes!("/home/q/rust/HarunaBot2/ttf/siyuan.ttf").to_vec(),
+            include_bytes!("ttf/siyuan.ttf").to_vec(),
         ) {
             Ok(ttf) => {OnceLock::from(ttf)},
             Err(e) => {

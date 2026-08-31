@@ -1,0 +1,7 @@
+ws_ip_port: ws://127.0.0.1:3001
+ws_token: vfMwmXqDhuXeyaN5fcLCnYxvwAHa2VuCQ2GlDm3KvUY
+http_ip_port: http://127.0.0.1:3000
+http_token: rpFcjE3vRkqsHcFeUUgWpeQ-Y9Becqx6L6g32tY08xQ
+bw_status: black
+black_list: []
+white_list: []
