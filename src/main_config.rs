@@ -12,6 +12,7 @@ pub struct MainConfig {
     pub bw_status: String,
     pub black_list: Vec<i64>,
     pub white_list: Vec<i64>,
+    pub log_level: String,
 }
 
 pub(crate) fn get_config() -> MainConfig {
@@ -62,6 +63,7 @@ fn create_config() {
         bw_status: "black".to_string(),
         black_list: Vec::new(),
         white_list: Vec::new(),
+        log_level: "info".to_string(),
     };
     let file_data = serde_yaml::to_string(&file_data).unwrap();
     std::fs::write("main_config.yaml", file_data).unwrap();

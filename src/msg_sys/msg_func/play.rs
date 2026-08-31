@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 pub struct Play {
-    pub(crate) status:bool,
+    pub(crate) status: bool,
 }
 #[async_trait]
 impl MsgHandler for Play {
@@ -12,7 +12,7 @@ impl MsgHandler for Play {
         msg.raw_message.contains(r#"title":"QQ经典农场"#)
     }
 
-    async fn process(&self,msg: Arc<Msg>) {
+    async fn process(&self, msg: Arc<Msg>) {
         let mut rep = SendMsg::new_msg().await;
         rep.join_text("不许给我转QQ农场喵".to_string()).await;
         rep.send_msg(msg.clone()).await;
@@ -21,8 +21,8 @@ impl MsgHandler for Play {
         rep1.send_msg(msg.clone()).await;
     }
 
-    async fn init(&mut self) -> (String,bool){
-        ("Play".to_string(),true)
+    async fn init(&mut self) -> (String, bool) {
+        ("Play".to_string(), true)
     }
 
     async fn status(&self) -> bool {

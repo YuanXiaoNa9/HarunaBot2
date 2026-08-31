@@ -1,20 +1,22 @@
 use crate::MAIN_CONFIG;
-use crate::msg_sys::msg_func::emoji_mujika::EmoMjk;
+use crate::msg_sys::msg_func::emojimujika::EmoMjk;
+use crate::msg_sys::msg_func::play::Play;
+use crate::msg_sys::msg_func::plusone::PlusOne;
 use crate::msg_sys::msg_func::test::Test;
 use async_trait::async_trait;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, warn};
-use crate::msg_sys::msg_func::play::Play;
 
 //注册功能函数
 #[async_trait]
 pub trait MsgHandler {
     async fn matches(&self, _: Arc<Msg>) -> bool;
     async fn process(&self, _: Arc<Msg>);
-    async fn init(&mut self) -> (String,bool);
+    async fn init(&mut self) -> (String, bool);
     async fn status(&self) -> bool;
 }
 
@@ -49,7 +51,7 @@ pub struct Msg {
 
 pub async fn msg_sys(mut msg_chan: Receiver<String>) {
     //模块初始化
-    let msg_handlers = handler_init().await;
+    let msg_handlers = msg_handler_init().await;
     loop {
         //从通道中取出json消息
         let msg: String = match msg_chan.recv().await {
@@ -82,7 +84,9 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
                 return;
             }
             //判断是否为黑白名单用户
-            if bw_right(&msg).await{return;};
+            if bw_right(&msg).await {
+                return;
+            };
             //打印消息日志
             log_msg(&msg);
             //进行解析
@@ -105,25 +109,27 @@ async fn dispatch(msg_handlers: Arc<Vec<Box<dyn MsgHandler + Send + Sync>>>, msg
     }
     debug!("not find handler");
 }
-
-async fn handler_init() -> Arc<Vec<Box<dyn MsgHandler + Send + Sync>>> {
+//功能函数初始化
+async fn msg_handler_init() -> Arc<Vec<Box<dyn MsgHandler + Send + Sync>>> {
     //注册功能模块
-    let handlers = handler_regin();
+    let handlers = msg_handler_regin();
     //创建新的vec存储handler
     let mut init_handlers = Vec::new();
     //取出handler并执行初始化方法
     for mut handler in handlers {
-        let (name,ok)=handler.init().await;
+        let (name, ok) = handler.init().await;
         if ok {
-            info!("<{}>模块初始化成功",name)
-        }else{
-            warn!("<{}>模块未初始化",name)
+            info!("<{}>模块初始化成功", name)
+        } else {
+            warn!("<{}>模块未初始化", name)
         }
         init_handlers.push(handler);
     }
     Arc::new(init_handlers)
 }
+//模块函数初始化
 
+//判断黑白名单
 async fn bw_right(msg: &Msg) -> bool {
     if MAIN_CONFIG.bw_status == "black" {
         for black_id in MAIN_CONFIG.black_list.iter() {
@@ -148,32 +154,33 @@ async fn bw_right(msg: &Msg) -> bool {
     }
     false
 }
-fn log_msg(msg:&Msg){
+//打印接收消息
+fn log_msg(msg: &Msg) {
     if msg.message_type == "group" {
         info!(
-                    "[{}]({}):[{}]({}) => <{}>",
-                    msg.group_name,
-                    msg.group_id,
-                    msg.sender.nickname,
-                    msg.sender.user_id,
-                    msg.raw_message
-                );
+            "[{}]({}):[{}]({}) => <{}>",
+            msg.group_name, msg.group_id, msg.sender.nickname, msg.sender.user_id, msg.raw_message
+        );
     } else if msg.message_type == "private" {
         info!(
-                    "{}({}): <{}>",
-                    msg.sender.nickname, msg.sender.user_id, msg.raw_message
-                );
+            "{}({}): <{}>",
+            msg.sender.nickname, msg.sender.user_id, msg.raw_message
+        );
     }
-
 }
-fn handler_regin() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
+//注册功能函数
+fn msg_handler_regin() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
     let handlers: Vec<Box<dyn MsgHandler + Send + Sync>> = vec![
         Box::new(Test { status: true }),
         Box::new(EmoMjk {
             status: true,
             ttf: OnceLock::new(),
         }),
-        Box::new(Play{status:true})
+        Box::new(Play { status: true }),
+        Box::new(PlusOne {
+            status: true,
+            map: OnceLock::new(),
+        }),
     ];
     handlers
 }

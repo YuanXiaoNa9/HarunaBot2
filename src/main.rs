@@ -1,19 +1,20 @@
-pub mod init_tracing;
+pub mod init_log;
 pub mod main_config;
 pub mod msg_sys;
 pub mod qq_link;
 
-use std::env;
-use std::string::ToString;
-use crate::init_tracing::init_tracing;
+use crate::init_log::init_tracing;
 use crate::main_config::{MainConfig, get_config};
 use crate::msg_sys::msg_sys::msg_sys;
 use crate::qq_link::qq_link;
 use reqwest::Client;
+use std::env;
+use std::string::ToString;
 use std::sync::LazyLock;
 static PATH: LazyLock<String> = LazyLock::new(|| env::current_dir().unwrap().display().to_string());
 static MAIN_CONFIG: LazyLock<MainConfig> = LazyLock::new(|| get_config());
-static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| Client::builder().no_proxy().build().unwrap());
+static HTTP_CLIENT: LazyLock<Client> =
+    LazyLock::new(|| Client::builder().no_proxy().build().unwrap());
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     //初始化日志

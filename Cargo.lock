@@ -10,6 +10,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "dashmap",
  "futures-util",
  "image",
  "imageproc",
@@ -440,6 +441,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "7.0.0-rc2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4a1e35a65fe0538a60167f0ada6e195ad5d477f6ddae273943596d4a1a5730b"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "equivalent",
+ "hashbrown 0.15.5",
+ "lock_api",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -751,6 +766,12 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
+
+[[package]]
+name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
@@ -1058,7 +1079,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
- "hashbrown",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]

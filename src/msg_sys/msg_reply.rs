@@ -1,5 +1,5 @@
 use crate::msg_sys::msg_reply::Data::{At, Face, File, Image, Node, Record, Reply, Video};
-use crate::msg_sys::msg_sys::{Msg};
+use crate::msg_sys::msg_sys::Msg;
 use crate::{HTTP_CLIENT, MAIN_CONFIG};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

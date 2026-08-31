@@ -30,7 +30,9 @@ impl MsgHandler for TTT {
         rep.send_msg(msg.clone()).await;
     }
 
-    async fn init(&mut self) -> (String,bool){("井字棋".to_string(),true)}
+    async fn init(&mut self) -> (String, bool) {
+        ("井字棋".to_string(), true)
+    }
 
     async fn status(&self) -> bool {
         self.status
