@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use image::{ImageReader, Rgba};
 use imageproc::drawing::draw_text_mut;
 use std::sync::{Arc, OnceLock};
+use tracing::error;
 
 pub struct EmoMjk {
     pub(crate) status: bool,
@@ -87,16 +88,19 @@ impl MsgHandler for EmoMjk {
         std::fs::remove_file(format!("{}/{}.png", PATH.as_str(), file_name).to_string()).unwrap();
     }
 
-    async fn init(&mut self) {
+    async fn init(&mut self) -> (String,bool) {
+        let name = "母鸡卡表情包".to_string();
         self.ttf = match FontVec::try_from_vec(
             include_bytes!("/home/q/rust/HarunaBot2/ttf/siyuan.ttf").to_vec(),
         ) {
-            Ok(ttf) => OnceLock::from(ttf),
-            Err(_) => {
+            Ok(ttf) => {OnceLock::from(ttf)},
+            Err(e) => {
+                error!("{:?}",e);
                 self.status = false;
-                return;
+                return (name,false);
             }
         };
+        (name,true)
     }
     async fn status(&self) -> bool {
         self.status

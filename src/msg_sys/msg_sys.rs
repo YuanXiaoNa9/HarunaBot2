@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use crate::msg_sys::msg_func::play::Play;
 
 //注册功能函数
@@ -14,7 +14,7 @@ use crate::msg_sys::msg_func::play::Play;
 pub trait MsgHandler {
     async fn matches(&self, _: Arc<Msg>) -> bool;
     async fn process(&self, _: Arc<Msg>);
-    async fn init(&mut self);
+    async fn init(&mut self) -> (String,bool);
     async fn status(&self) -> bool;
 }
 
@@ -113,7 +113,12 @@ async fn handler_init() -> Arc<Vec<Box<dyn MsgHandler + Send + Sync>>> {
     let mut init_handlers = Vec::new();
     //取出handler并执行初始化方法
     for mut handler in handlers {
-        handler.init().await;
+        let (name,ok)=handler.init().await;
+        if ok {
+            info!("<{}>模块初始化成功",name)
+        }else{
+            warn!("<{}>模块未初始化",name)
+        }
         init_handlers.push(handler);
     }
     Arc::new(init_handlers)

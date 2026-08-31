@@ -21,7 +21,8 @@ impl MsgHandler for Play {
         rep1.send_msg(msg.clone()).await;
     }
 
-    async fn init(&mut self) {
+    async fn init(&mut self) -> (String,bool){
+        ("Play".to_string(),true)
     }
 
     async fn status(&self) -> bool {
