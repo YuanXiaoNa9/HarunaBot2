@@ -6,6 +6,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing::{error, info};
+use tungstenite::{Error, Message};
 
 pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     //创建消息通道
@@ -25,12 +26,12 @@ pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     };
     //尝试ws连接
     spawn(async move {
-        data_get(request, chan_sender).await;
+        msg_get(request, chan_sender).await;
     });
     chan_receiver
 }
 
-async fn data_get(request: tungstenite::handshake::server::Request, chan_sender: Sender<String>) {
+async fn msg_get(request: tungstenite::handshake::server::Request, chan_sender: Sender<String>) {
     loop {
         let request = request.clone();
         let res = tokio_tungstenite::connect_async(request).await;
@@ -46,8 +47,16 @@ async fn data_get(request: tungstenite::handshake::server::Request, chan_sender:
         info!("ws连接成功,开始接收消息");
         //循环接收消息
         loop {
-            let msg = get.next().await.unwrap().unwrap().to_string();
-            chan_sender.send(msg).await.unwrap();
+            let msg = get.next().await;
+            let msg = match msg {
+                None => {error!("ws连接出现位置错误");break;}
+                Some(msg) => {msg}
+            };
+            let msg = match msg {
+                Ok(msg) => {msg}
+                Err(e) => {error!("消息接收出现错误:{}",e);break}
+            };
+            chan_sender.send(msg.to_string()).await.unwrap();
         }
     }
 }
