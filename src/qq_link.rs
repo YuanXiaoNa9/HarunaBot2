@@ -6,7 +6,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing::{error, info};
-use tungstenite::{Error, Message};
 
 pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     //创建消息通道

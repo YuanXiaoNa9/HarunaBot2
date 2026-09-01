@@ -75,7 +75,6 @@ impl MsgHandler for EmoMjk {
                 scaled_font.h_advance(id)
             })
             .sum();
-        println!("{}", i);
         let x: f32 = if text_location == "mid" || (text_location == "left" && i / ori_y >= 0.115) {
             i / 2.0
         } else if text_location == "left" && i / ori_y <= 0.115 {
