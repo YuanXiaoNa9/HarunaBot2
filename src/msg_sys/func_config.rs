@@ -1,16 +1,16 @@
-use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use tracing::{error, info};
 
-pub static FUNC_CONFIG:OnceLock<FuncConfig>=OnceLock::new();
-#[derive(Serialize,Deserialize,Debug)]
+pub static FUNC_CONFIG: OnceLock<FuncConfig> = OnceLock::new();
+#[derive(Serialize, Deserialize, Debug)]
 pub struct FuncConfig {
-    pub pg_ip_port:String,
+    pub pg_ip_port: String,
     pub pg_username: String,
-    pub db_name:String,
+    pub db_name: String,
     pub pg_password: String,
 }
-pub fn func_config_get(){
+pub fn func_config_get() {
     //读取文件并存入string
     let res_config_str = std::fs::read_to_string("func_config.yaml");
     //出现err则创建文件并写入默认内容
@@ -21,7 +21,7 @@ pub fn func_config_get(){
     }
     //解析配置文件并存入结构体
     let config_str = res_config_str.unwrap();
-    let res_config= serde_yaml::from_str(&config_str);
+    let res_config = serde_yaml::from_str(&config_str);
     //出现问题则写入默认内容
     if res_config.is_err() {
         error!("{}", res_config.err().unwrap());
@@ -59,4 +59,3 @@ fn create_config() {
     let file_data = serde_yaml::to_string(&file_data).unwrap();
     std::fs::write("func_config.yaml", file_data).unwrap();
 }
-

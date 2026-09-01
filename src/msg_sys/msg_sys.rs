@@ -1,9 +1,13 @@
 use crate::MAIN_CONFIG;
+use crate::msg_sys::func_config::func_config_get;
+use crate::msg_sys::func_mod::postgres_db::DbLink;
+use crate::msg_sys::func_mod::ttf::TtfData;
 use crate::msg_sys::msg_func::emojimujika::EmoMjk;
 use crate::msg_sys::msg_func::help::Help;
 use crate::msg_sys::msg_func::play::Play;
 use crate::msg_sys::msg_func::plusone::PlusOne;
 use crate::msg_sys::msg_func::test::Test;
+use crate::msg_sys::msg_func::ttt::TTT;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -11,10 +15,6 @@ use std::sync::{Arc, LazyLock, OnceLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, warn};
-use crate::msg_sys::func_config::func_config_get;
-use crate::msg_sys::func_mod::postgres_db::DbLink;
-use crate::msg_sys::func_mod::ttf::TtfData;
-use crate::msg_sys::msg_func::ttt::TTT;
 
 pub static MSGHANDLERS: OnceLock<Vec<Box<dyn MsgHandler + Send + Sync>>> = OnceLock::new();
 
@@ -29,9 +29,9 @@ pub trait MsgHandler {
     async fn name(&self) -> String;
 }
 #[async_trait]
-pub trait ModHandler{
-    async fn init(&self)->bool;
-    async fn name(&self)->String;
+pub trait ModHandler {
+    async fn init(&self) -> bool;
+    async fn name(&self) -> String;
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -127,7 +127,7 @@ async fn dispatch(msg: Msg) {
     debug!("not find handler");
 }
 //模块函数初始化
-async fn mod_handlers_init(){
+async fn mod_handlers_init() {
     let handlers = mod_handler_regin();
     for handler in handlers {
         let ok = handler.init().await;
@@ -136,7 +136,7 @@ async fn mod_handlers_init(){
         } else {
             warn!("<{}>模块未初始化", handler.name().await);
         }
-    };
+    }
 }
 //功能函数初始化
 async fn msg_handlers_init() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
@@ -197,9 +197,15 @@ fn log_msg(msg: &Msg) {
     }
 }
 fn mod_handler_regin() -> Vec<Box<dyn ModHandler + Send + Sync>> {
-    let handlers:Vec<Box<dyn ModHandler + Send + Sync>> = vec![
-      Box::new(TtfData{ status: false, ttf: Default::default() }),
-      Box::new(DbLink{ status: false, db_link: Default::default() })
+    let handlers: Vec<Box<dyn ModHandler + Send + Sync>> = vec![
+        Box::new(TtfData {
+            status: false,
+            ttf: Default::default(),
+        }),
+        Box::new(DbLink {
+            status: false,
+            db_link: Default::default(),
+        }),
     ];
     handlers
 }
@@ -207,12 +213,10 @@ fn mod_handler_regin() -> Vec<Box<dyn ModHandler + Send + Sync>> {
 fn msg_handler_regin() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
     let handlers: Vec<Box<dyn MsgHandler + Send + Sync>> = vec![
         Box::new(Test { status: true }),
-        Box::new(EmoMjk {
-            status: true,
-        }),
+        Box::new(EmoMjk { status: true }),
         Box::new(Play { status: true }),
         Box::new(Help { status: true }),
-        Box::new(TTT{ status: true }),
+        Box::new(TTT { status: true }),
         Box::new(PlusOne {
             status: true,
             map: OnceLock::new(),

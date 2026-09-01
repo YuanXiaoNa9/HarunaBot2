@@ -64,7 +64,13 @@ impl MsgHandler for EmoMjk {
         let i: f32 = text
             .chars()
             .map(|c| {
-                let scaled_font = TTF.get().unwrap().ttf.get().unwrap().as_scaled(PxScale::from(size));
+                let scaled_font = TTF
+                    .get()
+                    .unwrap()
+                    .ttf
+                    .get()
+                    .unwrap()
+                    .as_scaled(PxScale::from(size));
                 let id = scaled_font.glyph_id(c);
                 scaled_font.h_advance(id)
             })

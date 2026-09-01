@@ -1,2 +1,2 @@
-pub mod ttf;
 pub mod postgres_db;
+pub mod ttf;

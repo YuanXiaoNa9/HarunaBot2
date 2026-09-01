@@ -17,8 +17,11 @@ pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     )
     .into_client_request();
     let request = match request {
-        Ok(req) => {req}
-        Err(e) => {error!("{}",e);std::process::exit(1);}
+        Ok(req) => req,
+        Err(e) => {
+            error!("{}", e);
+            std::process::exit(1);
+        }
     };
     //尝试ws连接
     spawn(async move {

@@ -71,7 +71,9 @@ impl MsgHandler for Help {
                 rep.push_str(format!("\n{}", name).as_str());
             }
         }
-        rep.push_str("\n>\n\n使用\n/help name1 name2...\n查询对应功能帮助列表\neg:\n/help test 表情");
+        rep.push_str(
+            "\n>\n\n使用\n/help name1 name2...\n查询对应功能帮助列表\neg:\n/help test 表情",
+        );
         rep
     }
 
