@@ -1,7 +1,7 @@
-use crate::msg_sys::func_config::{FUNC_CONFIG, FuncConfig};
+use crate::msg_sys::func_config::FUNC_CONFIG;
 use crate::msg_sys::msg_sys::ModHandler;
 use async_trait::async_trait;
-use sqlx::{Error, Pool, Postgres};
+use sqlx::{Pool, Postgres};
 use std::sync::OnceLock;
 use tracing::error;
 
@@ -23,7 +23,7 @@ impl ModHandler for DbLink {
             .max_connections(10)
             .connect(&db_url)
             .await;
-        return match res_pool {
+        match res_pool {
             Ok(pool) => {
                 DBLINK
                     .set(DbLink {
@@ -43,7 +43,7 @@ impl ModHandler for DbLink {
                 error!("{}", e);
                 false
             }
-        };
+        }
     }
 
     async fn name(&self) -> String {
