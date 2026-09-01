@@ -11,6 +11,9 @@ use std::sync::{Arc, LazyLock, OnceLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, warn};
+use crate::msg_sys::func_config::func_config_get;
+use crate::msg_sys::func_mod::postgres_db::DbLink;
+use crate::msg_sys::func_mod::ttf::TtfData;
 use crate::msg_sys::msg_func::ttt::TTT;
 
 pub static MSGHANDLERS: OnceLock<Vec<Box<dyn MsgHandler + Send + Sync>>> = OnceLock::new();
@@ -24,6 +27,11 @@ pub trait MsgHandler {
     async fn status(&self) -> bool;
     async fn help(&self) -> String;
     async fn name(&self) -> String;
+}
+#[async_trait]
+pub trait ModHandler{
+    async fn init(&self)->bool;
+    async fn name(&self)->String;
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -54,10 +62,13 @@ pub struct Msg {
     pub font: i16,
     pub sender: MsgSender,
 }
-
+//消息系统主逻辑
 pub async fn msg_sys(mut msg_chan: Receiver<String>) {
+    //获取模块配置文件
+    func_config_get();
     //模块初始化
-    let msg_handlers = msg_handler_init().await;
+    mod_handlers_init().await;
+    let msg_handlers = msg_handlers_init().await;
     let _ = MSGHANDLERS.set(msg_handlers);
     loop {
         //从通道中取出json消息
@@ -115,8 +126,20 @@ async fn dispatch(msg: Msg) {
     }
     debug!("not find handler");
 }
+//模块函数初始化
+async fn mod_handlers_init(){
+    let handlers = mod_handler_regin();
+    for handler in handlers {
+        let ok = handler.init().await;
+        if ok {
+            info!("<{}>模块初始化成功", handler.name().await);
+        } else {
+            warn!("<{}>模块未初始化", handler.name().await);
+        }
+    };
+}
 //功能函数初始化
-async fn msg_handler_init() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
+async fn msg_handlers_init() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
     //注册功能模块
     let handlers = msg_handler_regin();
     //创建新的vec存储handler
@@ -133,7 +156,6 @@ async fn msg_handler_init() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
     }
     init_handlers
 }
-//模块函数初始化
 
 //判断黑白名单
 async fn bw_right(msg: &Msg) -> bool {
@@ -174,13 +196,19 @@ fn log_msg(msg: &Msg) {
         );
     }
 }
+fn mod_handler_regin() -> Vec<Box<dyn ModHandler + Send + Sync>> {
+    let handlers:Vec<Box<dyn ModHandler + Send + Sync>> = vec![
+      Box::new(TtfData{ status: false, ttf: Default::default() }),
+      Box::new(DbLink{ status: false, db_link: Default::default() })
+    ];
+    handlers
+}
 //注册功能函数
 fn msg_handler_regin() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
     let handlers: Vec<Box<dyn MsgHandler + Send + Sync>> = vec![
         Box::new(Test { status: true }),
         Box::new(EmoMjk {
             status: true,
-            ttf: OnceLock::new(),
         }),
         Box::new(Play { status: true }),
         Box::new(Help { status: true }),

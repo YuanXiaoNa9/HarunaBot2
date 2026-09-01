@@ -3,6 +3,8 @@ use crate::msg_sys::msg_sys::{Msg, MsgHandler};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::debug;
+use crate::msg_sys::func_mod::postgres_db::DBLINK;
+
 pub struct TTT {
     pub status: bool,
 }
@@ -31,8 +33,8 @@ impl MsgHandler for TTT {
     }
 
     async fn init(&mut self) -> bool {
-        self.status = false;
-        false
+        self.status = DBLINK.get().unwrap().status;
+        self.status
     }
 
     async fn status(&self) -> bool {

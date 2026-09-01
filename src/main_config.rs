@@ -15,12 +15,12 @@ pub struct MainConfig {
     pub log_level: String,
 }
 
-pub(crate) fn get_config() -> MainConfig {
+pub(crate) fn main_config_get() -> MainConfig {
     //读取文件并存入string
     let res_config_str = std::fs::read_to_string("main_config.yaml");
     //出现err则创建文件并写入默认内容
     if res_config_str.is_err() {
-        error!("Failed to read config file");
+        error!("Failed to read main_config file");
         create_config();
         std::process::exit(1);
     }

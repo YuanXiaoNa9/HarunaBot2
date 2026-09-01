@@ -22,3 +22,4 @@ imageproc = "0.27.0"
 ab_glyph = "0.2.32"
 rand = "0.10.2"
 dashmap = "7.0.0-rc2"
+sqlx = {version = "0.9.0",features = ["runtime-tokio","postgres"]}

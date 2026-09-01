@@ -15,8 +15,11 @@ pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
         "{}/?access_token={}",
         MAIN_CONFIG.ws_ip_port, MAIN_CONFIG.ws_token
     )
-    .into_client_request()
-    .unwrap();
+    .into_client_request();
+    let request = match request {
+        Ok(req) => {req}
+        Err(e) => {error!("{}",e);std::process::exit(1);}
+    };
     //尝试ws连接
     spawn(async move {
         data_get(request, chan_sender).await;

@@ -1,16 +1,15 @@
 use crate::PATH;
+use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{Msg, MsgHandler};
-use ab_glyph::{Font, FontVec, PxScale, ScaleFont};
+use ab_glyph::{Font, PxScale, ScaleFont};
 use async_trait::async_trait;
 use image::{ImageReader, Rgba};
 use imageproc::drawing::draw_text_mut;
-use std::sync::{Arc, OnceLock};
-use tracing::error;
+use std::sync::Arc;
 
 pub struct EmoMjk {
     pub(crate) status: bool,
-    pub(crate) ttf: OnceLock<FontVec>,
 }
 #[async_trait]
 impl MsgHandler for EmoMjk {
@@ -65,7 +64,7 @@ impl MsgHandler for EmoMjk {
         let i: f32 = text
             .chars()
             .map(|c| {
-                let scaled_font = self.ttf.get().unwrap().as_scaled(PxScale::from(size));
+                let scaled_font = TTF.get().unwrap().ttf.get().unwrap().as_scaled(PxScale::from(size));
                 let id = scaled_font.glyph_id(c);
                 scaled_font.h_advance(id)
             })
@@ -85,7 +84,7 @@ impl MsgHandler for EmoMjk {
             x,
             y,
             PxScale::from(size),
-            &self.ttf.get().unwrap(),
+            &TTF.get().unwrap().ttf.get().unwrap(),
             text,
         );
         let end_time = pic_start_time.elapsed();
@@ -101,16 +100,8 @@ impl MsgHandler for EmoMjk {
     }
 
     async fn init(&mut self) -> bool {
-        let name = "母鸡卡表情包".to_string();
-        self.ttf = match FontVec::try_from_vec(include_bytes!("ttf/siyuan.ttf").to_vec()) {
-            Ok(ttf) => OnceLock::from(ttf),
-            Err(e) => {
-                error!("{:?}", e);
-                self.status = false;
-                return false;
-            }
-        };
-        true
+        self.status = TTF.get().unwrap().status;
+        self.status
     }
     async fn status(&self) -> bool {
         self.status
