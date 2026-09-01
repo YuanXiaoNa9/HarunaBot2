@@ -2,8 +2,6 @@ use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{Msg, MsgHandler};
 use async_trait::async_trait;
 use dashmap::DashMap;
-use dashmap::mapref::one::Ref;
-use std::ops::Deref;
 use std::sync::{Arc, OnceLock};
 use tracing::debug;
 
@@ -77,12 +75,20 @@ impl MsgHandler for PlusOne {
         }
     }
 
-    async fn init(&mut self) -> (String, bool) {
+    async fn init(&mut self) -> bool {
         self.map = OnceLock::from(DashMap::new());
-        ("加一".to_string(), self.status)
+        self.status
     }
 
     async fn status(&self) -> bool {
         self.status
+    }
+
+    async fn help(&self) -> String {
+        "群聊自动加一，仅在群聊开启".to_string()
+    }
+
+    async fn name(&self) -> String {
+        "加一".to_string()
     }
 }

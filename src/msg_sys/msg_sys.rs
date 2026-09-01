@@ -1,23 +1,29 @@
 use crate::MAIN_CONFIG;
 use crate::msg_sys::msg_func::emojimujika::EmoMjk;
+use crate::msg_sys::msg_func::help::Help;
 use crate::msg_sys::msg_func::play::Play;
 use crate::msg_sys::msg_func::plusone::PlusOne;
 use crate::msg_sys::msg_func::test::Test;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, warn};
+use crate::msg_sys::msg_func::ttt::TTT;
+
+pub static MSGHANDLERS: OnceLock<Vec<Box<dyn MsgHandler + Send + Sync>>> = OnceLock::new();
 
 //注册功能函数
 #[async_trait]
 pub trait MsgHandler {
     async fn matches(&self, _: Arc<Msg>) -> bool;
     async fn process(&self, _: Arc<Msg>);
-    async fn init(&mut self) -> (String, bool);
+    async fn init(&mut self) -> bool;
     async fn status(&self) -> bool;
+    async fn help(&self) -> String;
+    async fn name(&self) -> String;
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -52,6 +58,7 @@ pub struct Msg {
 pub async fn msg_sys(mut msg_chan: Receiver<String>) {
     //模块初始化
     let msg_handlers = msg_handler_init().await;
+    let _ = MSGHANDLERS.set(msg_handlers);
     loop {
         //从通道中取出json消息
         let msg: String = match msg_chan.recv().await {
@@ -65,7 +72,6 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
         if msg == "" {
             continue;
         }
-        let handlers = msg_handlers.clone();
         //后台执行
         spawn(async move {
             //使用MsgGet结构体进行解析
@@ -90,16 +96,16 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
             //打印消息日志
             log_msg(&msg);
             //进行解析
-            dispatch(handlers, msg).await;
+            dispatch(msg).await;
         });
     }
 }
 
-async fn dispatch(msg_handlers: Arc<Vec<Box<dyn MsgHandler + Send + Sync>>>, msg: Msg) {
+async fn dispatch(msg: Msg) {
     debug!("finding handler");
     let msg = Arc::new(msg);
     //取出handler
-    for handler in msg_handlers.iter() {
+    for handler in MSGHANDLERS.get().unwrap().iter() {
         //使用handler的match方法进行判断消息是否符合
         if handler.matches(msg.clone()).await && handler.status().await {
             debug!("find handler");
@@ -110,22 +116,22 @@ async fn dispatch(msg_handlers: Arc<Vec<Box<dyn MsgHandler + Send + Sync>>>, msg
     debug!("not find handler");
 }
 //功能函数初始化
-async fn msg_handler_init() -> Arc<Vec<Box<dyn MsgHandler + Send + Sync>>> {
+async fn msg_handler_init() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
     //注册功能模块
     let handlers = msg_handler_regin();
     //创建新的vec存储handler
     let mut init_handlers = Vec::new();
     //取出handler并执行初始化方法
     for mut handler in handlers {
-        let (name, ok) = handler.init().await;
+        let ok = handler.init().await;
         if ok {
-            info!("<{}>模块初始化成功", name)
+            info!("<{}>模块初始化成功", handler.name().await);
         } else {
-            warn!("<{}>模块未初始化", name)
+            warn!("<{}>模块未初始化", handler.name().await);
         }
         init_handlers.push(handler);
     }
-    Arc::new(init_handlers)
+    init_handlers
 }
 //模块函数初始化
 
@@ -177,6 +183,8 @@ fn msg_handler_regin() -> Vec<Box<dyn MsgHandler + Send + Sync>> {
             ttf: OnceLock::new(),
         }),
         Box::new(Play { status: true }),
+        Box::new(Help { status: true }),
+        Box::new(TTT{ status: true }),
         Box::new(PlusOne {
             status: true,
             map: OnceLock::new(),

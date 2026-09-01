@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::debug;
 pub struct TTT {
-    status: bool,
+    pub status: bool,
 }
 #[async_trait]
 impl MsgHandler for TTT {
@@ -30,11 +30,20 @@ impl MsgHandler for TTT {
         rep.send_msg(msg.clone()).await;
     }
 
-    async fn init(&mut self) -> (String, bool) {
-        ("井字棋".to_string(), true)
+    async fn init(&mut self) -> bool {
+        self.status = false;
+        false
     }
 
     async fn status(&self) -> bool {
         self.status
+    }
+
+    async fn help(&self) -> String {
+        "开发中".to_string()
+    }
+
+    async fn name(&self) -> String {
+        "井字棋".to_string()
     }
 }

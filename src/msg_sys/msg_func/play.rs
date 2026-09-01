@@ -21,11 +21,19 @@ impl MsgHandler for Play {
         rep1.send_msg(msg.clone()).await;
     }
 
-    async fn init(&mut self) -> (String, bool) {
-        ("Play".to_string(), true)
+    async fn init(&mut self) -> bool {
+        true
     }
 
     async fn status(&self) -> bool {
         self.status
+    }
+
+    async fn help(&self) -> String {
+        "娱乐功能，或许会有一些小彩蛋".to_string()
+    }
+
+    async fn name(&self) -> String {
+        "娱乐".to_string()
     }
 }

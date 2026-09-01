@@ -16,10 +16,18 @@ impl MsgHandler for Test {
         todo!()
     }
 
-    async fn init(&mut self) -> (String, bool) {
-        ("测试".to_string(), true)
+    async fn init(&mut self) -> bool {
+        true
     }
     async fn status(&self) -> bool {
         self.status
+    }
+
+    async fn help(&self) -> String {
+        "测试使用".to_string()
+    }
+
+    async fn name(&self) -> String {
+        "test".to_string()
     }
 }

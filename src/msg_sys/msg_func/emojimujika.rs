@@ -100,19 +100,27 @@ impl MsgHandler for EmoMjk {
         std::fs::remove_file(format!("{}/{}.png", PATH.as_str(), file_name).to_string()).unwrap();
     }
 
-    async fn init(&mut self) -> (String, bool) {
+    async fn init(&mut self) -> bool {
         let name = "母鸡卡表情包".to_string();
         self.ttf = match FontVec::try_from_vec(include_bytes!("ttf/siyuan.ttf").to_vec()) {
             Ok(ttf) => OnceLock::from(ttf),
             Err(e) => {
                 error!("{:?}", e);
                 self.status = false;
-                return (name, false);
+                return false;
             }
         };
-        (name, true)
+        true
     }
     async fn status(&self) -> bool {
         self.status
+    }
+
+    async fn help(&self) -> String {
+        "生成表情包，格式为<角色说><空格><文字内容>\n角色支持:\n睦/祥子/初华/喵梦/海铃/鲸(DS娘)\neg:\n睦说 好女孩".to_string()
+    }
+
+    async fn name(&self) -> String {
+        "表情".to_string()
     }
 }
