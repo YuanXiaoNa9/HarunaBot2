@@ -11,11 +11,8 @@ pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     //创建消息通道
     let (chan_sender, chan_receiver) = tokio::sync::mpsc::channel(200);
     //构建ws链接
-    let request = format!(
-        "{}/?access_token={}",
-        MAIN_CONFIG.ws_ip_port, MAIN_CONFIG.ws_token
-    )
-    .into_client_request();
+
+    let request = format!("{}/?access_token={}", MAIN_CONFIG.ws_ip_port,MAIN_CONFIG.ws_token).into_client_request();
     let request = match request {
         Ok(req) => req,
         Err(e) => {
@@ -48,12 +45,18 @@ async fn msg_get(request: tungstenite::handshake::server::Request, chan_sender: 
         loop {
             let msg = get.next().await;
             let msg = match msg {
-                None => {error!("ws连接出现位置错误");break;}
-                Some(msg) => {msg}
+                None => {
+                    error!("ws连接出现位置错误");
+                    break;
+                }
+                Some(msg) => msg,
             };
             let msg = match msg {
-                Ok(msg) => {msg}
-                Err(e) => {error!("消息接收出现错误:{}",e);break}
+                Ok(msg) => msg,
+                Err(e) => {
+                    error!("消息接收出现错误:{}", e);
+                    break;
+                }
             };
             chan_sender.send(msg.to_string()).await.unwrap();
         }

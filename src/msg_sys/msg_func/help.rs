@@ -1,5 +1,5 @@
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{MSGHANDLERS, Msg, MsgHandler};
+use crate::msg_sys::msg_sys::{Handler, MSG_HANDLERS, Msg};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::debug;
@@ -8,7 +8,7 @@ pub struct Help {
     pub status: bool,
 }
 #[async_trait]
-impl MsgHandler for Help {
+impl Handler for Help {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
         let mut split = msg.raw_message.split(" ");
         if split.next().unwrap() == "/help" {
@@ -21,7 +21,7 @@ impl MsgHandler for Help {
     async fn process(&self, msg: Arc<Msg>) {
         let mut splits = msg.raw_message.split(" ");
         splits.next();
-        let mut rep = SendMsg::new_msg().await;
+        let mut rep = SendMsg::new().await;
         if splits.next().is_none() {
             debug!("return help list");
             rep.join_text(self.help().await).await;
@@ -33,7 +33,7 @@ impl MsgHandler for Help {
         let mut splits = msg.raw_message.split(" ");
         splits.next();
         's: for split in splits {
-            for handler in MSGHANDLERS.get().unwrap().iter() {
+            for handler in MSG_HANDLERS.get().unwrap().iter() {
                 if split == "help" {
                     continue 's;
                 }
@@ -54,6 +54,7 @@ impl MsgHandler for Help {
     }
 
     async fn init(&mut self) -> bool {
+        self.status = true;
         true
     }
 
@@ -62,7 +63,7 @@ impl MsgHandler for Help {
     }
 
     async fn help(&self) -> String {
-        let handlers = MSGHANDLERS.get().unwrap();
+        let handlers = MSG_HANDLERS.get().unwrap();
         let mut rep = String::new();
         rep.push_str("help list\n\n>");
         for handler in handlers {

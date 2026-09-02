@@ -1,7 +1,7 @@
-use crate::PATH;
+use crate::{MAIN_CONFIG, PATH};
 use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{Msg, MsgHandler};
+use crate::msg_sys::msg_sys::{Handler, Msg};
 use ab_glyph::{Font, PxScale, ScaleFont};
 use async_trait::async_trait;
 use image::{ImageReader, Rgba};
@@ -12,7 +12,7 @@ pub struct EmoMjk {
     pub(crate) status: bool,
 }
 #[async_trait]
-impl MsgHandler for EmoMjk {
+impl Handler for EmoMjk {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
         let mut msg_split = msg.raw_message.split(' ');
         let start_str = msg_split.next().unwrap();
@@ -94,14 +94,14 @@ impl MsgHandler for EmoMjk {
         );
         let end_time = pic_start_time.elapsed();
         let file_name: i32 = rand::random();
-        img.save(format!("{}/{}.png", PATH.as_str(), file_name))
+        img.save(format!("{}/temp/{}.png", PATH.as_str(), file_name))
             .unwrap();
-        let mut rep = SendMsg::new_msg().await;
-        rep.join_image(format!("{}/{}.png", PATH.as_str(), file_name).to_string())
+        let mut rep = SendMsg::new().await;
+        rep.join_image(format!("{}/{}.png",MAIN_CONFIG.docker_path.as_str(), file_name).to_string())
             .await;
         rep.join_text(format!("耗时:{:?}", end_time)).await;
         rep.send_msg(msg).await;
-        std::fs::remove_file(format!("{}/{}.png", PATH.as_str(), file_name).to_string()).unwrap();
+        std::fs::remove_file(format!("{}/temp/{}.png", PATH.as_str(), file_name).to_string()).unwrap();
     }
 
     async fn init(&mut self) -> bool {

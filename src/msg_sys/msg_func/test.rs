@@ -1,4 +1,4 @@
-use crate::msg_sys::msg_sys::{Msg, MsgHandler};
+use crate::msg_sys::msg_sys::{Handler, Msg};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -7,7 +7,7 @@ pub struct Test {
 }
 
 #[async_trait]
-impl MsgHandler for Test {
+impl Handler for Test {
     async fn matches(&self, _msg: Arc<Msg>) -> bool {
         false
     }
@@ -17,6 +17,7 @@ impl MsgHandler for Test {
     }
 
     async fn init(&mut self) -> bool {
+        self.status = true;
         true
     }
     async fn status(&self) -> bool {

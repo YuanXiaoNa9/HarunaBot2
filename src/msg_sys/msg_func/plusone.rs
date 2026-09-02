@@ -1,5 +1,5 @@
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{Msg, MsgHandler};
+use crate::msg_sys::msg_sys::{Handler, Msg};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::{Arc, OnceLock};
@@ -16,7 +16,7 @@ pub struct PlusOne {
     pub(crate) map: OnceLock<DashMap<i64, PlusOneData>>,
 }
 #[async_trait]
-impl MsgHandler for PlusOne {
+impl Handler for PlusOne {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
         if msg.message_type == "group" {
             return true;
@@ -67,7 +67,7 @@ impl MsgHandler for PlusOne {
             return;
         }
         if i == 2 {
-            let mut rep = SendMsg::new_msg().await;
+            let mut rep = SendMsg::new().await;
             rep.join_text(msg.raw_message.clone()).await;
             rep.send_msg(msg).await;
             debug!("plusone ok");
@@ -77,6 +77,7 @@ impl MsgHandler for PlusOne {
 
     async fn init(&mut self) -> bool {
         self.map = OnceLock::from(DashMap::new());
+        self.status = true;
         self.status
     }
 
