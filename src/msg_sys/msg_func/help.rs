@@ -1,6 +1,7 @@
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{Handler, MSG_HANDLERS, Msg};
 use async_trait::async_trait;
+use std::ops::DerefMut;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -10,8 +11,8 @@ pub struct Help {
 #[async_trait]
 impl Handler for Help {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
-        let mut split = msg.raw_message.split(" ");
-        if split.next().unwrap() == "/help" {
+        let mut splits = msg.raw_message.split(" ");
+        if splits.next().unwrap() == "/help" {
             debug!("find help mod");
             return true;
         }
@@ -25,7 +26,7 @@ impl Handler for Help {
         if splits.next().is_none() {
             debug!("return help list");
             rep.join_text(self.help().await).await;
-            rep.send_msg(msg).await;
+            rep.send_msg(msg.clone()).await;
             return;
         }
         let mut unfind_help = String::new();
@@ -49,7 +50,7 @@ impl Handler for Help {
             rep.join_text(format!("\n\n未找到帮助项:{}", unfind_help))
                 .await;
         }
-        rep.send_msg(msg).await;
+        rep.send_msg(msg.clone()).await;
         return;
     }
 

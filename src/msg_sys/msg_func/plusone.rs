@@ -25,14 +25,21 @@ impl Handler for PlusOne {
     }
 
     async fn process(&self, msg: Arc<Msg>) {
-        let raw_message = msg.raw_message.clone();
+        let raw_message = msg
+            .raw_message
+            .clone()
+            .strip_prefix("[bot_msg]")
+            .unwrap_or(msg.raw_message.clone().as_str())
+            .to_string();
+        let user_id = msg.user_id.clone();
+        let self_id = msg.self_id.clone();
         let data = match self.map.get().unwrap().get(&msg.group_id) {
             None => {
                 self.map.get().unwrap().insert(
                     msg.group_id,
                     PlusOneData {
                         last_message: raw_message,
-                        user_id: msg.sender.user_id,
+                        user_id,
                         i: 1,
                     },
                 );
@@ -41,14 +48,27 @@ impl Handler for PlusOne {
             }
             Some(data) => data,
         };
+        debug!(
+            "\nlast msg:\n{}\nnow msg:\n{}",
+            data.last_message, raw_message
+        );
         let i = data.i;
         if data.last_message == raw_message {
+            if data.user_id == self_id && i == 1 && user_id != self_id {
+                let mut rep = SendMsg::new().await;
+                rep.join_text("不要复读人家喵".to_string()).await;
+                rep.send_msg(msg.clone()).await;
+                let mut rep = SendMsg::new().await;
+                rep.join_text("打断复读喵".to_string()).await;
+                rep.send_msg(msg.clone()).await;
+                return;
+            };
             drop(data);
             self.map.get().unwrap().insert(
                 msg.group_id,
                 PlusOneData {
                     last_message: raw_message,
-                    user_id: msg.sender.user_id,
+                    user_id,
                     i: i + 1,
                 },
             );
@@ -59,7 +79,7 @@ impl Handler for PlusOne {
                 msg.group_id,
                 PlusOneData {
                     last_message: raw_message,
-                    user_id: msg.sender.user_id,
+                    user_id,
                     i: 1,
                 },
             );

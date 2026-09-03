@@ -11,10 +11,10 @@ pub struct TTT {
 #[async_trait]
 impl Handler for TTT {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
-        let mut split = msg.raw_message.split(" ");
-        if split.next() == Some("[CQ:at,qq=1246137523]")
-            && split.next() == Some("/ttt")
-            && split.next().is_some()
+        let mut splits = msg.raw_message.split(" ");
+        if splits.next() == Some("[CQ:at,qq=1246137523]")
+            && splits.next() == Some("/ttt")
+            && splits.next().is_some()
         {
             debug!("TTT is OK");
             return true;
@@ -24,11 +24,11 @@ impl Handler for TTT {
     }
 
     async fn process(&self, msg: Arc<Msg>) {
-        let mut split = msg.raw_message.split(" ");
-        split.next();
-        split.next();
+        let mut splits = msg.raw_message.split(" ");
+        splits.next();
+        splits.next();
         let mut rep = SendMsg::new().await;
-        rep.join_text(split.next().unwrap().to_string()).await;
+        rep.join_text(splits.next().unwrap().to_string()).await;
         rep.send_msg(msg.clone()).await;
     }
 

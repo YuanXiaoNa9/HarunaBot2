@@ -1,8 +1,11 @@
-use crate::msg_sys::msg_reply::Data::{At, Face, File, Image, Node, Record, Reply, Video};
+use crate::msg_sys::msg_reply::Data::{Face, File, Image, Node, Record, Text, Video};
 use crate::msg_sys::msg_reply::PostType::Poke;
-use crate::msg_sys::msg_sys::Msg;
+use crate::msg_sys::msg_sys::{Msg, MsgSender};
+use crate::qq_link::SEND_CHAN;
 use crate::{HTTP_CLIENT, MAIN_CONFIG};
 use serde::{Deserialize, Serialize};
+use std::cmp::PartialEq;
+use std::ops::Deref;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -25,9 +28,7 @@ pub struct SendMsg {
 enum Data {
     Text(DataText),
     Image(DataImage),
-    At(DataAt),
     Face(DataFace),
-    Reply(DataReply),
     Record(DataRecord),
     Video(DataVideo),
     File(DataFile),
@@ -56,8 +57,10 @@ impl SendMsg {
     }
     pub async fn join_at(&mut self, at_id: i64) {
         self.message.push(Message {
-            r#type: "at".to_string(),
-            data: At(DataAt { qq: at_id }),
+            r#type: "text".to_string(),
+            data: Data::Text(DataText {
+                text: format!("[CQ:at,qq={}", at_id),
+            }),
         })
     }
     //添加图片消息
@@ -76,8 +79,10 @@ impl SendMsg {
     }
     pub async fn join_reply(&mut self, message_id: i64) {
         self.message.push(Message {
-            r#type: "reply".to_string(),
-            data: Reply(DataReply { id: message_id }),
+            r#type: "text".to_string(),
+            data: Text(DataText {
+                text: format!("[CQ:reply,id={}]", message_id),
+            }),
         });
     }
     pub async fn join_record(&mut self, file_path: String) {
@@ -118,9 +123,48 @@ impl SendMsg {
         } else {
             self.message_type = "group".to_string();
         }
-
+        if self.message_type == "group" {
+            let mut bot_msg = String::new();
+            bot_msg.push_str("[bot_msg]");
+            for i in &self.message {
+                match &i.data {
+                    Text(data) => bot_msg.push_str(data.text.as_str()),
+                    _ => {}
+                }
+            }
+            let msg = Msg {
+                time: 0,
+                self_id: msg.self_id,
+                post_type: "message".to_string(),
+                message_type: "group".to_string(),
+                sub_type: "".to_string(),
+                target_id: 0,
+                message_id: 0,
+                message_seq: 0,
+                group_id: msg.group_id,
+                group_name: "bot".to_string(),
+                user_id: msg.self_id,
+                message: "".to_string(),
+                raw_message: bot_msg,
+                font: 0,
+                sender: MsgSender {
+                    user_id: msg.self_id,
+                    nickname: "bot".to_string(),
+                    card: "".to_string(),
+                    role: "".to_string(),
+                    sex: "".to_string(),
+                    age: 0,
+                },
+            };
+            SEND_CHAN
+                .get()
+                .unwrap()
+                .send(serde_json::to_string(&msg).unwrap())
+                .await
+                .unwrap();
+        }
         debug!("try send msg");
-        send(PostType::Message(self), "send_msg".to_string()).await;
+        send(&PostType::Message(self), "send_msg".to_string()).await;
     }
     pub async fn send_forward_msg(mut self, msg: Arc<Msg>) {
         if self.user_id == 0 && self.group_id == 0 {
@@ -129,7 +173,7 @@ impl SendMsg {
         }
 
         debug!("try send msg");
-        send(PostType::Message(self), "send_forward_msg".to_string()).await;
+        send(&PostType::Message(self), "send_forward_msg".to_string()).await;
     }
 }
 impl DataNode {
@@ -151,8 +195,10 @@ impl DataNode {
     }
     pub async fn join_at(&mut self, at_id: i64) {
         self.content.push(Message {
-            r#type: "at".to_string(),
-            data: At(DataAt { qq: at_id }),
+            r#type: "text".to_string(),
+            data: Data::Text(DataText {
+                text: format!("[CQ:at,qq={}", at_id),
+            }),
         })
     }
     //添加图片消息
@@ -171,8 +217,10 @@ impl DataNode {
     }
     pub async fn join_reply(&mut self, message_id: i64) {
         self.content.push(Message {
-            r#type: "reply".to_string(),
-            data: Reply(DataReply { id: message_id }),
+            r#type: "text".to_string(),
+            data: Text(DataText {
+                text: format!("[CQ:reply,id={}]", message_id),
+            }),
         });
     }
     pub async fn join_record(&mut self, file_path: String) {
@@ -207,11 +255,6 @@ pub struct Message {
 struct DataText {
     text: String,
 }
-
-#[derive(Serialize, Deserialize, Debug)]
-struct DataAt {
-    qq: i64,
-}
 #[derive(Serialize, Deserialize, Debug)]
 struct DataImage {
     file: String,
@@ -219,10 +262,6 @@ struct DataImage {
 #[derive(Serialize, Deserialize, Debug)]
 struct DataFace {
     id: i32,
-}
-#[derive(Serialize, Deserialize, Debug)]
-struct DataReply {
-    id: i64,
 }
 #[derive(Serialize, Deserialize, Debug)]
 struct DataRecord {
@@ -257,18 +296,18 @@ impl SendPoke {
             user_id: uid,
             group_id: None,
         };
-        send(Poke(data), "friend_poke".to_string()).await;
+        send(&Poke(data), "friend_poke".to_string()).await;
     }
     pub async fn group(gid: i64, uid: i64) {
         let data = SendPoke {
             user_id: uid,
             group_id: Some(gid),
         };
-        send(Poke(data), "group_poke".to_string()).await;
+        send(&Poke(data), "group_poke".to_string()).await;
     }
 }
 
-async fn send(data: PostType, post_type: String) {
+async fn send(data: &PostType, post_type: String) {
     match HTTP_CLIENT
         .post(format!("{}/{}", MAIN_CONFIG.http_ip_port, post_type))
         .json(&data)

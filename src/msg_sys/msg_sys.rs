@@ -128,7 +128,6 @@ async fn notice_dispatch(msg: Msg) {
         if handler.status().await && handler.matches(msg.clone()).await {
             debug!("find notice handler");
             handler.process(msg.clone()).await;
-            return;
         }
     }
     debug!("not find handler");

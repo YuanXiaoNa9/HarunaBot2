@@ -14,15 +14,15 @@ pub struct EmoMjk {
 #[async_trait]
 impl Handler for EmoMjk {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
-        let mut msg_split = msg.raw_message.split(' ');
-        let start_str = msg_split.next().unwrap();
+        let mut splits = msg.raw_message.split(" ");
+        let start_str = splits.next().unwrap();
         if (start_str == "睦说"
             || start_str == "祥子说"
             || start_str == "初华说"
             || start_str == "喵梦说"
             || start_str == "海铃说"
             || start_str == "鲸说")
-            && msg_split.next().is_some()
+            && splits.next().is_some()
         {
             true
         } else {
@@ -31,8 +31,8 @@ impl Handler for EmoMjk {
     }
 
     async fn process(&self, msg: Arc<Msg>) {
-        let mut msg_split = msg.raw_message.split(' ');
-        let name = msg_split.next().unwrap();
+        let mut splits = msg.raw_message.split(" ");
+        let name = splits.next().unwrap();
         let mut file_name: &str = "";
         let mut text_location = "mid";
         if name == "睦说" {
@@ -49,6 +49,7 @@ impl Handler for EmoMjk {
             file_name = "DS";
             text_location = "left";
         }
+
         let text = msg
             .raw_message
             .strip_prefix(format!("{} ", name).as_str())
@@ -102,7 +103,7 @@ impl Handler for EmoMjk {
         )
         .await;
         rep.join_text(format!("耗时:{:?}", end_time)).await;
-        rep.send_msg(msg).await;
+        rep.send_msg(msg.clone()).await;
         std::fs::remove_file(format!("{}/temp/{}.png", PATH.as_str(), file_name).to_string())
             .unwrap();
     }
