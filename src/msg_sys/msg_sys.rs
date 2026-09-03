@@ -81,7 +81,10 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
                 error!("消息接收出现错误");
                 continue;
             }
-            Some(i) =>{debug!("{}", i);i},
+            Some(i) => {
+                debug!("{}", i);
+                i
+            }
         };
         //判断是否为空字符串（心跳）
         if msg == "" {
@@ -91,9 +94,7 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
         spawn(async move {
             //使用MsgGet结构体进行解析
             let msg: Msg = match serde_json::from_str(msg.as_str()) {
-                Ok(msg_struct) => {
-                    msg_struct
-                }
+                Ok(msg_struct) => msg_struct,
                 Err(e) => {
                     error!("解析消息出现错误：{}", e);
                     return;

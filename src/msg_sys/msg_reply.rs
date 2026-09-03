@@ -19,7 +19,6 @@ pub struct SendMsg {
     pub group_id: i64,
     pub user_id: i64,
     message: Vec<Message>,
-
 }
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
@@ -116,7 +115,7 @@ impl SendMsg {
         }
         if self.group_id == 0 {
             self.message_type = "private".to_string();
-        }else {
+        } else {
             self.message_type = "group".to_string();
         }
 

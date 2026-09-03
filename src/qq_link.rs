@@ -12,7 +12,11 @@ pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     let (chan_sender, chan_receiver) = tokio::sync::mpsc::channel(200);
     //构建ws链接
 
-    let request = format!("{}/?access_token={}", MAIN_CONFIG.ws_ip_port,MAIN_CONFIG.ws_token).into_client_request();
+    let request = format!(
+        "{}/?access_token={}",
+        MAIN_CONFIG.ws_ip_port, MAIN_CONFIG.ws_token
+    )
+    .into_client_request();
     let request = match request {
         Ok(req) => req,
         Err(e) => {

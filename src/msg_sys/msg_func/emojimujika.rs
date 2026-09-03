@@ -1,7 +1,7 @@
-use crate::{MAIN_CONFIG, PATH};
 use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{Handler, Msg};
+use crate::{MAIN_CONFIG, PATH};
 use ab_glyph::{Font, PxScale, ScaleFont};
 use async_trait::async_trait;
 use image::{ImageReader, Rgba};
@@ -97,11 +97,14 @@ impl Handler for EmoMjk {
         img.save(format!("{}/temp/{}.png", PATH.as_str(), file_name))
             .unwrap();
         let mut rep = SendMsg::new().await;
-        rep.join_image(format!("{}/{}.png",MAIN_CONFIG.docker_path.as_str(), file_name).to_string())
-            .await;
+        rep.join_image(
+            format!("{}/{}.png", MAIN_CONFIG.docker_path.as_str(), file_name).to_string(),
+        )
+        .await;
         rep.join_text(format!("耗时:{:?}", end_time)).await;
         rep.send_msg(msg).await;
-        std::fs::remove_file(format!("{}/temp/{}.png", PATH.as_str(), file_name).to_string()).unwrap();
+        std::fs::remove_file(format!("{}/temp/{}.png", PATH.as_str(), file_name).to_string())
+            .unwrap();
     }
 
     async fn init(&mut self) -> bool {

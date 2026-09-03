@@ -57,7 +57,7 @@ pub(crate) fn main_config_get() -> MainConfig {
 fn create_config() {
     info!("正在写入新配置文件");
     let file_data = MainConfig {
-        docker_path:"/app/temp".to_string(),
+        docker_path: "/app/temp".to_string(),
         ws_ip_port: "".to_string(),
         ws_token: "".to_string(),
         http_ip_port: "".to_string(),
