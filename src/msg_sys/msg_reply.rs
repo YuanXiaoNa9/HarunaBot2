@@ -4,8 +4,6 @@ use crate::msg_sys::msg_sys::{Msg, MsgSender};
 use crate::qq_link::SEND_CHAN;
 use crate::{HTTP_CLIENT, MAIN_CONFIG};
 use serde::{Deserialize, Serialize};
-use std::cmp::PartialEq;
-use std::ops::Deref;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -308,23 +306,28 @@ impl SendPoke {
 }
 
 async fn send(data: &PostType, post_type: String) {
+    let mut ip_port = MAIN_CONFIG.nc_setting.http_ip_port.clone();
+    if !ip_port.starts_with("http://"){
+        ip_port = ip_port.strip_prefix("https://").unwrap_or(ip_port.as_str()).to_string();
+        ip_port = format!("http://{}",ip_port);
+    }
+    ip_port = ip_port.strip_suffix("/").unwrap_or(ip_port.as_str()).to_string();
     match HTTP_CLIENT
-        .post(format!("{}/{}", MAIN_CONFIG.http_ip_port, post_type))
+        .post(format!("{}/{}", ip_port, post_type))
         .json(&data)
         .header(
             "Authorization",
-            format!("Bearer {}", MAIN_CONFIG.http_token),
+            format!("Bearer {}", MAIN_CONFIG.nc_setting.http_token),
         )
         .send()
         .await
     {
         Ok(i) => {
-            info!("消息发送成功");
+            info!("消息发送成 server return:{:?}", i);
             debug!("send msg:{}", serde_json::to_string(&data).unwrap());
-            debug!("server return:{:?}", i);
         }
         Err(e) => {
-            error!("消息发送失败{:?}", e);
+            error!("消息发送失败{:?}\norigin url:{}", e,ip_port);
         }
     };
 }

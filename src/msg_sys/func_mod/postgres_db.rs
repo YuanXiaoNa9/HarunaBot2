@@ -17,7 +17,7 @@ impl ModHandler for DbLink {
         let config = FUNC_CONFIG.get().unwrap();
         let db_url = format!(
             "postgres://{}:{}@{}/{}",
-            config.pg_username, config.pg_password, config.pg_ip_port, config.db_name
+            config.postgres.pg_username, config.postgres.pg_password, config.postgres.pg_ip_port, config.postgres.db_name
         );
         let res_pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(10)

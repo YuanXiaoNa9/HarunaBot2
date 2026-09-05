@@ -5,6 +5,10 @@ use tracing::{error, info};
 pub static FUNC_CONFIG: OnceLock<FuncConfig> = OnceLock::new();
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FuncConfig {
+    pub(crate) postgres: PGConfig,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PGConfig {
     pub pg_ip_port: String,
     pub pg_username: String,
     pub db_name: String,
@@ -51,10 +55,12 @@ pub fn func_config_get() {
 fn create_config() {
     info!("正在写入新配置文件");
     let file_data = FuncConfig {
-        pg_ip_port: "".to_string(),
-        pg_username: "".to_string(),
-        db_name: "".to_string(),
-        pg_password: "".to_string(),
+        postgres: PGConfig {
+            pg_ip_port: "".to_string(),
+            pg_username: "".to_string(),
+            db_name: "".to_string(),
+            pg_password: "".to_string(),
+        },
     };
     let file_data = serde_yaml::to_string(&file_data).unwrap();
     std::fs::write("func_config.yaml", file_data).unwrap();

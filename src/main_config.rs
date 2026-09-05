@@ -5,15 +5,21 @@ use tracing::{error, info};
 #[serde(default)]
 pub struct MainConfig {
     pub docker_path: String,
-    pub ws_ip_port: String,
-    pub ws_token: String,
-    pub http_ip_port: String,
-    pub http_token: String,
+    pub nc_setting: NcSetting,
     #[serde(default = "default_bw_status")]
     pub bw_status: String,
     pub black_list: Vec<i64>,
     pub white_list: Vec<i64>,
     pub log_level: String,
+}
+#[derive(Serialize, Deserialize, Default, Debug)]
+pub struct NcSetting{
+    pub ws_ip_port: String,
+    pub ws_token: String,
+    pub http_ip_port: String,
+    pub http_token: String,
+    #[serde(default = "default_img_send_way")]
+    pub img_send_way: String,
 }
 
 pub(crate) fn main_config_get() -> MainConfig {
@@ -58,10 +64,7 @@ fn create_config() {
     info!("正在写入新配置文件");
     let file_data = MainConfig {
         docker_path: "/app/temp".to_string(),
-        ws_ip_port: "".to_string(),
-        ws_token: "".to_string(),
-        http_ip_port: "".to_string(),
-        http_token: "".to_string(),
+        nc_setting: Default::default(),
         bw_status: "black".to_string(),
         black_list: Vec::new(),
         white_list: Vec::new(),
@@ -74,3 +77,4 @@ fn create_config() {
 fn default_bw_status() -> String {
     "black".to_string()
 }
+fn default_img_send_way() -> String {"file".to_string()}

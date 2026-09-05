@@ -1,6 +1,6 @@
 use crate::MAIN_CONFIG;
 use futures_util::StreamExt;
-use std::sync::{Mutex, OnceLock, RwLock};
+use std::sync::{ OnceLock};
 use std::time::Duration;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
@@ -13,16 +13,20 @@ pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     let (chan_sender, chan_receiver) = tokio::sync::mpsc::channel(200);
     SEND_CHAN.set(chan_sender).unwrap();
     //构建ws链接
-
+    let mut ip_port = MAIN_CONFIG.nc_setting.ws_ip_port.clone();
+    if !ip_port.starts_with("ws://"){
+        ip_port = format!("ws://{}",ip_port);
+    }
+    ip_port = ip_port.strip_suffix("/").unwrap_or(ip_port.as_str()).to_string();
     let request = format!(
         "{}/?access_token={}",
-        MAIN_CONFIG.ws_ip_port, MAIN_CONFIG.ws_token
+        ip_port, MAIN_CONFIG.nc_setting.ws_token
     )
     .into_client_request();
     let request = match request {
         Ok(req) => req,
         Err(e) => {
-            error!("{}", e);
+            error!("ws request create error: {}\norigin url: {}", e,ip_port);
             std::process::exit(1);
         }
     };
