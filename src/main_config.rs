@@ -13,7 +13,7 @@ pub struct MainConfig {
     pub log_level: String,
 }
 #[derive(Serialize, Deserialize, Default, Debug)]
-pub struct NcSetting{
+pub struct NcSetting {
     pub ws_ip_port: String,
     pub ws_token: String,
     pub http_ip_port: String,
@@ -77,4 +77,6 @@ fn create_config() {
 fn default_bw_status() -> String {
     "black".to_string()
 }
-fn default_img_send_way() -> String {"file".to_string()}
+fn default_img_send_way() -> String {
+    "file".to_string()
+}

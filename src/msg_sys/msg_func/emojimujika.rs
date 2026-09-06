@@ -1,11 +1,11 @@
 use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{Handler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use crate::{MAIN_CONFIG, PATH};
 use ab_glyph::{Font, PxScale, ScaleFont};
 use async_trait::async_trait;
-use base64::engine::general_purpose;
 use base64::Engine;
+use base64::engine::general_purpose;
 use image::ImageFormat::Png;
 use image::{ImageReader, Rgba};
 use imageproc::drawing::draw_text_mut;
@@ -16,7 +16,7 @@ pub struct EmoMjk {
     pub(crate) status: bool,
 }
 #[async_trait]
-impl Handler for EmoMjk {
+impl FnHandler for EmoMjk {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
         let mut splits = msg.raw_message.split(" ");
         let start_str = splits.next().unwrap();
@@ -101,18 +101,20 @@ impl Handler for EmoMjk {
         let file_name: i32 = rand::random();
         let mut rep = SendMsg::new().await;
 
-        if MAIN_CONFIG.nc_setting.img_send_way == "b64"||MAIN_CONFIG.nc_setting.img_send_way == "base64" {
+        if MAIN_CONFIG.nc_setting.img_send_way == "b64"
+            || MAIN_CONFIG.nc_setting.img_send_way == "base64"
+        {
             let mut buf = Cursor::new(Vec::new());
             img.write_to(&mut buf, Png).expect("Cannot write to png");
             let b64 = general_purpose::STANDARD.encode(buf.into_inner());
-            rep.join_image(format!("base64://{}",b64)).await;
-        }else if MAIN_CONFIG.nc_setting.img_send_way == "file" {
+            rep.join_image(format!("base64://{}", b64)).await;
+        } else if MAIN_CONFIG.nc_setting.img_send_way == "file" {
             img.save(format!("{}/temp/{}.png", PATH.as_str(), file_name))
                 .unwrap();
             rep.join_image(
                 format!("{}/{}.png", MAIN_CONFIG.docker_path.as_str(), file_name).to_string(),
             )
-                .await;
+            .await;
         }
         rep.join_text(format!("耗时:{:?}", end_time)).await;
         rep.send_msg(msg.clone()).await;

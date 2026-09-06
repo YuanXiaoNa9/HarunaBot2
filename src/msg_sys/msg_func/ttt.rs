@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{Handler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::debug;
@@ -9,7 +9,7 @@ pub struct TTT {
     pub status: bool,
 }
 #[async_trait]
-impl Handler for TTT {
+impl FnHandler for TTT {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
         let mut splits = msg.raw_message.split(" ");
         if splits.next() == Some("[CQ:at,qq=1246137523]")

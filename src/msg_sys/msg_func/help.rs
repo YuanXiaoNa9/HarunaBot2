@@ -1,5 +1,5 @@
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{Handler, MSG_HANDLERS, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, MSG_HANDLERS, Msg};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::debug;
@@ -8,7 +8,7 @@ pub struct Help {
     pub status: bool,
 }
 #[async_trait]
-impl Handler for Help {
+impl FnHandler for Help {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
         let mut splits = msg.raw_message.split(" ");
         if splits.next().unwrap() == "/help" {
@@ -37,7 +37,7 @@ impl Handler for Help {
                 if split == "help" {
                     continue 's;
                 }
-                if split == handler.name().await.as_str() {
+                if split == handler.name().await.as_str() && handler.status().await {
                     rep.join_text(format!("\n\n<{}>:\n{}", split, handler.help().await))
                         .await;
                     continue 's;

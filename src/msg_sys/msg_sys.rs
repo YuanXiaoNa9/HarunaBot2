@@ -3,6 +3,7 @@ use crate::msg_sys::func_config::func_config_get;
 use crate::msg_sys::func_mod::postgres_db::DbLink;
 use crate::msg_sys::func_mod::ttf::TtfData;
 use crate::msg_sys::msg_func::emojimujika::EmoMjk;
+use crate::msg_sys::msg_func::emojiphoto::MemPhoto;
 use crate::msg_sys::msg_func::help::Help;
 use crate::msg_sys::msg_func::play::Play;
 use crate::msg_sys::msg_func::plusone::PlusOne;
@@ -15,12 +16,16 @@ use std::sync::{Arc, OnceLock};
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, warn};
-
-pub static MSG_HANDLERS: OnceLock<Vec<Box<dyn Handler + Send + Sync>>> = OnceLock::new();
-pub static NOTICE_HANDLERS: OnceLock<Vec<Box<dyn Handler + Send + Sync>>> = OnceLock::new();
+enum Handler {
+    Funcs(Vec<Box<dyn FnHandler + Send + Sync>>),
+    Mods(Vec<Box<dyn ModHandler + Send + Sync>>),
+    None(()),
+}
+pub static MSG_HANDLERS: OnceLock<Vec<Box<dyn FnHandler + Send + Sync>>> = OnceLock::new();
+pub static NOTICE_HANDLERS: OnceLock<Vec<Box<dyn FnHandler + Send + Sync>>> = OnceLock::new();
 //注册功能函数
 #[async_trait]
-pub trait Handler {
+pub trait FnHandler {
     async fn matches(&self, _: Arc<Msg>) -> bool;
     async fn process(&self, _: Arc<Msg>);
     async fn init(&mut self) -> bool;
@@ -147,43 +152,66 @@ async fn msg_dispatch(msg: Msg) {
     }
     debug!("not find handler");
 }
-async fn notice_handlers_init() -> Vec<Box<dyn Handler + Send + Sync>> {
+async fn notice_handlers_init() -> Vec<Box<dyn FnHandler + Send + Sync>> {
     let handlers = notice_handler_regin();
-    init(handlers).await
+    if let Handler::Funcs(a) = mian_init(Handler::Funcs(handlers)).await {
+        return a;
+    }
+    panic!()
 }
 //模块函数初始化
 async fn mod_handlers_init() {
     let handlers = mod_handler_regin();
-    for handler in handlers {
-        let ok = handler.init().await;
-        if ok {
-            info!("<{}>模块初始化成功", handler.name().await);
-        } else {
-            warn!("<{}>模块未初始化", handler.name().await);
-        }
-    }
+    mian_init(Handler::Mods(handlers)).await;
 }
 //功能函数初始化
-async fn msg_handlers_init() -> Vec<Box<dyn Handler + Send + Sync>> {
+async fn msg_handlers_init() -> Vec<Box<dyn FnHandler + Send + Sync>> {
     //注册功能模块
     let handlers = msg_handler_regin();
     //取出handler并执行初始化方法
-    init(handlers).await
-}
-async fn init(
-    handlers: Vec<Box<dyn Handler + Send + Sync>>,
-) -> Vec<Box<dyn Handler + Send + Sync>> {
-    let mut init_handlers = Vec::new();
-    for mut handler in handlers {
-        let ok = handler.init().await;
-        if ok {
-            info!("<{}>模块初始化成功", handler.name().await);
-        } else {
-            warn!("<{}>模块未初始化", handler.name().await);
-        }
-        init_handlers.push(handler);
+    if let Handler::Funcs(a) = mian_init(Handler::Funcs(handlers)).await {
+        return a;
     }
-    init_handlers
+    panic!()
+}
+async fn mian_init(handlers: Handler) -> Handler {
+    let mut ok_list: String = String::new();
+    let mut err_list: String = String::new();
+    match handlers {
+        Handler::Funcs(handlers) => {
+            let mut init_handlers: Vec<Box<dyn FnHandler + Send + Sync>> = vec![];
+            for mut handler in handlers {
+                let ok = handler.init().await;
+                if ok {
+                    ok_list.push_str(format!("<{}>", handler.name().await).as_str());
+                } else {
+                    err_list.push_str(format!("<{}>", handler.name().await).as_str());
+                }
+                init_handlers.push(handler)
+            }
+            info!("功能{}初始化成功√", ok_list);
+            if !err_list.is_empty() {
+                warn!("功能{}初始化失败×", err_list);
+            }
+            Handler::Funcs(init_handlers)
+        }
+        Handler::Mods(handlers) => {
+            for handler in handlers {
+                let ok = handler.init().await;
+                if ok {
+                    ok_list.push_str(format!("<{}>", handler.name().await).as_str());
+                } else {
+                    err_list.push_str(format!("<{}>", handler.name().await).as_str());
+                }
+            }
+            info!("模块{}初始化成功√", ok_list);
+            if !err_list.is_empty() {
+                warn!("模块{}初始化失败×", err_list);
+            }
+            Handler::None(())
+        }
+        _ => Handler::None(()),
+    }
 }
 
 //判断黑白名单
@@ -239,13 +267,14 @@ fn mod_handler_regin() -> Vec<Box<dyn ModHandler + Send + Sync>> {
     handlers
 }
 //注册功能函数
-fn msg_handler_regin() -> Vec<Box<dyn Handler + Send + Sync>> {
-    let handlers: Vec<Box<dyn Handler + Send + Sync>> = vec![
+fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
+    let handlers: Vec<Box<dyn FnHandler + Send + Sync>> = vec![
         Box::new(Test { status: false }),
         Box::new(EmoMjk { status: false }),
         Box::new(Play { status: false }),
         Box::new(Help { status: false }),
         Box::new(TTT { status: false }),
+        Box::new(MemPhoto { status: false }),
         Box::new(PlusOne {
             status: false,
             map: OnceLock::new(),
@@ -253,7 +282,7 @@ fn msg_handler_regin() -> Vec<Box<dyn Handler + Send + Sync>> {
     ];
     handlers
 }
-fn notice_handler_regin() -> Vec<Box<dyn Handler + Send + Sync>> {
-    let handlers: Vec<Box<dyn Handler + Send + Sync>> = vec![Box::new(Poke { status: false })];
+fn notice_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
+    let handlers: Vec<Box<dyn FnHandler + Send + Sync>> = vec![Box::new(Poke { status: false })];
     handlers
 }

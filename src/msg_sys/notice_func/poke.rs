@@ -1,5 +1,5 @@
 use crate::msg_sys::msg_reply::SendPoke;
-use crate::msg_sys::msg_sys::{Handler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::log::debug;
@@ -8,7 +8,7 @@ pub struct Poke {
     pub status: bool,
 }
 #[async_trait]
-impl Handler for Poke {
+impl FnHandler for Poke {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
         debug!("matches poke mod");
         debug!("{}", msg.sub_type);

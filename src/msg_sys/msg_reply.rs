@@ -306,12 +306,7 @@ impl SendPoke {
 }
 
 async fn send(data: &PostType, post_type: String) {
-    let mut ip_port = MAIN_CONFIG.nc_setting.http_ip_port.clone();
-    if !ip_port.starts_with("http://"){
-        ip_port = ip_port.strip_prefix("https://").unwrap_or(ip_port.as_str()).to_string();
-        ip_port = format!("http://{}",ip_port);
-    }
-    ip_port = ip_port.strip_suffix("/").unwrap_or(ip_port.as_str()).to_string();
+    let ip_port = http_ip_process();
     match HTTP_CLIENT
         .post(format!("{}/{}", ip_port, post_type))
         .json(&data)
@@ -323,11 +318,27 @@ async fn send(data: &PostType, post_type: String) {
         .await
     {
         Ok(i) => {
-            info!("消息发送成 server return:{:?}", i);
+            info!("消息发送成功 server return:{:?}", i);
             debug!("send msg:{}", serde_json::to_string(&data).unwrap());
         }
         Err(e) => {
-            error!("消息发送失败{:?}\norigin url:{}", e,ip_port);
+            error!("消息发送失败{:?}\norigin url:{}", e, ip_port);
         }
     };
+}
+
+pub fn http_ip_process() -> String {
+    let mut ip_port = MAIN_CONFIG.nc_setting.http_ip_port.clone();
+    if !ip_port.starts_with("http://") {
+        ip_port = ip_port
+            .strip_prefix("https://")
+            .unwrap_or(ip_port.as_str())
+            .to_string();
+        ip_port = format!("http://{}", ip_port);
+    }
+    ip_port = ip_port
+        .strip_suffix("/")
+        .unwrap_or(ip_port.as_str())
+        .to_string();
+    ip_port
 }

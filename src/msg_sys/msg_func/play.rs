@@ -1,5 +1,5 @@
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{Handler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -7,7 +7,7 @@ pub struct Play {
     pub(crate) status: bool,
 }
 #[async_trait]
-impl Handler for Play {
+impl FnHandler for Play {
     async fn matches(&self, msg: Arc<Msg>) -> bool {
         msg.raw_message.contains(r#"title":"QQ经典农场"#)
     }

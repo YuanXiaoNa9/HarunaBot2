@@ -1,4 +1,4 @@
-use crate::msg_sys::msg_sys::{Handler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -7,7 +7,7 @@ pub struct Test {
 }
 
 #[async_trait]
-impl Handler for Test {
+impl FnHandler for Test {
     async fn matches(&self, _msg: Arc<Msg>) -> bool {
         false
     }
