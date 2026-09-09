@@ -11,15 +11,16 @@ use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::str::Bytes;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tracing::error;
 use tracing::log::debug;
 
 pub struct MemPhoto {
-    pub(crate) status: bool,
+    pub(crate) status: AtomicBool,
 }
 #[async_trait]
 impl FnHandler for MemPhoto {
-    async fn matches(&self, msg: Arc<Msg>) -> bool {
+    async fn matches(&self, msg: &Msg) -> bool {
         if msg.raw_message.starts_with("永远怀念[CQ:image,")
             || msg.raw_message.starts_with("永远怀念\n[CQ:image,")
         {
@@ -28,9 +29,9 @@ impl FnHandler for MemPhoto {
         false
     }
 
-    async fn process(&self, msg: Arc<Msg>) {
+    async fn process(&self, msg: &Msg) {
         let start = std::time::Instant::now();
-        let id = get_img_id(msg.clone()).await;
+        let id = get_img_id(msg).await;
         let id = match id {
             None => {
                 return;
@@ -87,13 +88,10 @@ impl FnHandler for MemPhoto {
         rep.send_msg(msg).await;
     }
 
-    async fn init(&mut self) -> bool {
-        self.status = true;
-        self.status
-    }
+    async fn init(&self) {}
 
     async fn status(&self) -> bool {
-        self.status
+        true
     }
 
     async fn help(&self) -> String {
@@ -109,7 +107,7 @@ async fn get_img(file_id: String) -> tungstenite::Bytes {
     let bytes = resp.bytes().await.unwrap();
     bytes
 }
-async fn get_img_id(msg: Arc<Msg>) -> Option<String> {
+async fn get_img_id(msg: &Msg) -> Option<String> {
     #[derive(Serialize, Deserialize, Debug)]
     struct Body {
         file: String,

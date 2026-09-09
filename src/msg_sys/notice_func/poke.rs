@@ -1,15 +1,16 @@
 use crate::msg_sys::msg_reply::SendPoke;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 use tracing::log::debug;
 
 pub struct Poke {
-    pub status: bool,
+    pub status: AtomicBool,
 }
 #[async_trait]
 impl FnHandler for Poke {
-    async fn matches(&self, msg: Arc<Msg>) -> bool {
+    async fn matches(&self, msg: &Msg) -> bool {
         debug!("matches poke mod");
         debug!("{}", msg.sub_type);
         if msg.sub_type == "poke" && msg.target_id == msg.self_id {
@@ -18,7 +19,7 @@ impl FnHandler for Poke {
         false
     }
 
-    async fn process(&self, msg: Arc<Msg>) {
+    async fn process(&self, msg: &Msg) {
         if msg.group_id == 0 {
             SendPoke::private(msg.user_id).await;
         } else {
@@ -26,13 +27,12 @@ impl FnHandler for Poke {
         }
     }
 
-    async fn init(&mut self) -> bool {
-        self.status = true;
-        self.status
+    async fn init(&self) {
+        self.status.store(true, Relaxed);
     }
 
     async fn status(&self) -> bool {
-        self.status
+        self.status.load(Relaxed)
     }
 
     async fn help(&self) -> String {

@@ -1,6 +1,8 @@
+use crate::msg_sys::func_mod::postgres_db::DBLINK;
+use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::msg_reply::Data::{Face, File, Image, Node, Record, Text, Video};
 use crate::msg_sys::msg_reply::PostType::Poke;
-use crate::msg_sys::msg_sys::{Msg, MsgSender};
+use crate::msg_sys::msg_sys::{ModData, Msg, MsgSender};
 use crate::qq_link::SEND_CHAN;
 use crate::{HTTP_CLIENT, MAIN_CONFIG};
 use serde::{Deserialize, Serialize};
@@ -111,7 +113,7 @@ impl SendMsg {
         })
     }
     //调用该方法时，传入原始消息作为基本数据，并将自身存储的消息数据发送，
-    pub async fn send_msg(mut self, msg: Arc<Msg>) {
+    pub async fn send_msg(mut self, msg: &Msg) {
         if self.user_id == 0 && self.group_id == 0 {
             self.user_id = msg.sender.user_id;
             self.group_id = msg.group_id;
@@ -164,7 +166,7 @@ impl SendMsg {
         debug!("try send msg");
         send(&PostType::Message(self), "send_msg".to_string()).await;
     }
-    pub async fn send_forward_msg(mut self, msg: Arc<Msg>) {
+    pub async fn send_forward_msg(mut self, msg: &Msg) {
         if self.user_id == 0 && self.group_id == 0 {
             self.user_id = msg.sender.user_id;
             self.group_id = msg.group_id;

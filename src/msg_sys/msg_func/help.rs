@@ -1,15 +1,15 @@
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, MSG_HANDLERS, Msg};
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tracing::debug;
 
 pub struct Help {
-    pub status: bool,
+    pub(crate) status: AtomicBool,
 }
 #[async_trait]
 impl FnHandler for Help {
-    async fn matches(&self, msg: Arc<Msg>) -> bool {
+    async fn matches(&self, msg: &Msg) -> bool {
         let mut splits = msg.raw_message.split(" ");
         if splits.next().unwrap() == "/help" {
             debug!("find help mod");
@@ -18,7 +18,7 @@ impl FnHandler for Help {
         false
     }
 
-    async fn process(&self, msg: Arc<Msg>) {
+    async fn process(&self, msg: &Msg) {
         let mut splits = msg.raw_message.split(" ");
         splits.next();
         let mut rep = SendMsg::new().await;
@@ -53,13 +53,10 @@ impl FnHandler for Help {
         return;
     }
 
-    async fn init(&mut self) -> bool {
-        self.status = true;
-        true
-    }
+    async fn init(&self) {}
 
     async fn status(&self) -> bool {
-        self.status
+        true
     }
 
     async fn help(&self) -> String {

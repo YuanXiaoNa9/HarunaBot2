@@ -3,14 +3,17 @@ use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 use tracing::debug;
 
 pub struct TTT {
-    pub status: bool,
+    pub enable: bool,
+    pub status: AtomicBool,
 }
 #[async_trait]
 impl FnHandler for TTT {
-    async fn matches(&self, msg: Arc<Msg>) -> bool {
+    async fn matches(&self, msg: &Msg) -> bool {
         let mut splits = msg.raw_message.split(" ");
         if splits.next() == Some("[CQ:at,qq=1246137523]")
             && splits.next() == Some("/ttt")
@@ -23,22 +26,37 @@ impl FnHandler for TTT {
         false
     }
 
-    async fn process(&self, msg: Arc<Msg>) {
+    async fn process(&self, msg: &Msg) {
         let mut splits = msg.raw_message.split(" ");
         splits.next();
         splits.next();
         let mut rep = SendMsg::new().await;
         rep.join_text(splits.next().unwrap().to_string()).await;
-        rep.send_msg(msg.clone()).await;
+        rep.send_msg(msg).await;
     }
 
-    async fn init(&mut self) -> bool {
-        self.status = DBLINK.get().unwrap().status;
-        self.status
+    async fn init(&self) {
+        let mut rx = DBLINK.rx.clone();
+        if *rx.borrow_and_update() {
+            self.status.store(true, Relaxed);
+        } else {
+            loop {
+                let _ =rx.changed().await;
+                if *rx.borrow_and_update() {
+                    self.status.store(true, Relaxed);
+                    break;
+                } else {
+                    continue;
+                }
+            }
+        }
     }
 
     async fn status(&self) -> bool {
-        self.status
+        if self.enable && self.status.load(Relaxed) {
+            return true;
+        }
+        false
     }
 
     async fn help(&self) -> String {

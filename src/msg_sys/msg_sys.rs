@@ -1,7 +1,7 @@
 use crate::MAIN_CONFIG;
 use crate::msg_sys::func_config::func_config_get;
-use crate::msg_sys::func_mod::postgres_db::DbLink;
-use crate::msg_sys::func_mod::ttf::TtfData;
+use crate::msg_sys::func_mod::postgres_db::DBLINK;
+use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::msg_func::emojimujika::EmoMjk;
 use crate::msg_sys::msg_func::emojiphoto::MemPhoto;
 use crate::msg_sys::msg_func::help::Help;
@@ -10,25 +10,31 @@ use crate::msg_sys::msg_func::plusone::PlusOne;
 use crate::msg_sys::msg_func::test::Test;
 use crate::msg_sys::msg_func::ttt::TTT;
 use crate::msg_sys::notice_func::poke::Poke;
+use ab_glyph::FontVec;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, OnceLock};
+use sqlx::{Pool, Postgres};
+use std::sync::OnceLock;
+use std::sync::atomic::AtomicBool;
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
-use tracing::{debug, error, info, warn};
+use tracing::log::warn;
+use tracing::{debug, error, info};
+use tracing::log::__private_api::log;
+
 enum Handler {
-    Funcs(Vec<Box<dyn FnHandler + Send + Sync>>),
-    Mods(Vec<Box<dyn ModHandler + Send + Sync>>),
-    None(()),
+    MsgFn(Vec<Box<dyn FnHandler + Send + Sync>>),
+    NtcFn(Vec<Box<dyn FnHandler + Send + Sync>>),
+    Mods(Vec<&'static (dyn ModHandler + Send + Sync)>),
 }
 pub static MSG_HANDLERS: OnceLock<Vec<Box<dyn FnHandler + Send + Sync>>> = OnceLock::new();
 pub static NOTICE_HANDLERS: OnceLock<Vec<Box<dyn FnHandler + Send + Sync>>> = OnceLock::new();
 //注册功能函数
 #[async_trait]
 pub trait FnHandler {
-    async fn matches(&self, _: Arc<Msg>) -> bool;
-    async fn process(&self, _: Arc<Msg>);
-    async fn init(&mut self) -> bool;
+    async fn matches(&self, _: &Msg) -> bool;
+    async fn process(&self, _: &Msg);
+    async fn init(&self);
     async fn status(&self) -> bool;
     async fn help(&self) -> String;
     async fn name(&self) -> String;
@@ -36,8 +42,15 @@ pub trait FnHandler {
 
 #[async_trait]
 pub trait ModHandler {
-    async fn init(&self) -> bool;
+    async fn init(&self);
     async fn name(&self) -> String;
+    async fn init_status(&self) -> bool;
+}
+pub enum ModData {
+    Ttf(&'static FontVec),
+    Pgpool(&'static Pool<Postgres>),
+
+    Err(bool),
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -69,22 +82,24 @@ pub struct Msg {
     pub font: i16,
     pub sender: MsgSender,
 }
+
 //消息系统主逻辑
 pub async fn msg_sys(mut msg_chan: Receiver<String>) {
     //获取模块配置文件
     func_config_get();
     //模块初始化
-    mod_handlers_init().await;
-    let notice_handlers = notice_handlers_init().await;
-    let msg_handlers = msg_handlers_init().await;
-    let _ = MSG_HANDLERS.set(msg_handlers);
-    let _ = NOTICE_HANDLERS.set(notice_handlers);
+    spawn(async move {
+        mod_handlers_init().await;
+    });
+
+    notice_handlers_init().await;
+    msg_handlers_init().await;
     loop {
         //从通道中取出json消息
         let msg: String = match msg_chan.recv().await {
             None => {
                 error!("消息接收出现错误");
-                continue;
+                std::process::exit(1);
             }
             Some(i) => {
                 debug!("{}", i);
@@ -97,121 +112,158 @@ pub async fn msg_sys(mut msg_chan: Receiver<String>) {
         }
         //后台执行
         spawn(async move {
-            //使用MsgGet结构体进行解析
-            let msg: Msg = match serde_json::from_str(msg.as_str()) {
-                Ok(msg_struct) => msg_struct,
-                Err(e) => {
-                    error!("解析消息出现错误：{}", e);
-                    return;
-                }
-            };
-
-            //判断是否为黑白名单用户
-            if bw_right(&msg).await {
-                return;
-            };
-            //打印消息日志
-            log_msg(&msg);
-            if msg.post_type == "notice" {
-                notice_dispatch(msg).await;
-                return;
-            }
-            //判断是否为文字消息
-            if msg.post_type == "message" {
-                msg_dispatch(msg).await;
-                return;
-            }
-            //进行解析
+            msg_analysis(msg).await;
         });
     }
 }
-
-async fn notice_dispatch(msg: Msg) {
-    debug!("finding notice handler");
-    let msg = Arc::new(msg);
-    for handler in NOTICE_HANDLERS.get().unwrap().iter() {
-        if handler.status().await && handler.matches(msg.clone()).await {
-            debug!("find notice handler");
-            handler.process(msg.clone()).await;
+//消息路由
+async fn msg_analysis(msg: String) {
+    //使用MsgGet结构体进行解析
+    let mut msg: Msg = match serde_json::from_str(msg.as_str()) {
+        Ok(msg_struct) => msg_struct,
+        Err(e) => {
+            error!("解析消息出现错误：{}", e);
+            return;
         }
+    };
+    if msg.raw_message == "" {
+        msg.raw_message = " ".to_string();
     }
-    debug!("not find handler");
+    //判断是否为黑白名单用户
+    if bw_right(&msg).await {
+        return;
+    };
+    //打印消息日志
+    log_msg(&msg);
+    if msg.post_type == "notice" {
+        //判断是否为提醒类消息
+        notice_dispatch(msg).await;
+        return;
+    } else if msg.post_type == "message" {
+        //判断是否为文字类消息
+        msg_dispatch(msg).await;
+        return;
+    }
 }
-
+//msg（普通）消息dispatch，由msg_analysis路由
 async fn msg_dispatch(msg: Msg) {
     debug!("finding msg handler");
-    let msg = Arc::new(msg);
     //取出handler
     for handler in MSG_HANDLERS.get().unwrap().iter() {
         //使用handler的match方法进行判断消息是否符合
-        if handler.status().await && handler.matches(msg.clone()).await {
+        if handler.status().await && handler.matches(&msg).await {
             debug!("find msg handler");
-            handler.process(msg.clone()).await;
+            handler.process(&msg).await;
             return;
         }
     }
     debug!("not find handler");
 }
-async fn notice_handlers_init() -> Vec<Box<dyn FnHandler + Send + Sync>> {
-    let handlers = notice_handler_regin();
-    if let Handler::Funcs(a) = mian_init(Handler::Funcs(handlers)).await {
-        return a;
+
+//notice消息dispatch，由msg_analysis路由
+async fn notice_dispatch(msg: Msg) {
+    debug!("finding notice handler");
+    for handler in NOTICE_HANDLERS.get().unwrap().iter() {
+        if handler.status().await && handler.matches(&msg).await {
+            debug!("find notice handler");
+            handler.process(&msg).await;
+        }
     }
-    panic!()
+    debug!("not find handler");
 }
-//模块函数初始化
+
+//模块注册函数
+fn mod_handler_regin() -> Vec<&'static (dyn ModHandler + Send + Sync)> {
+    let handlers: Vec<&'static (dyn ModHandler + Send + Sync)> = vec![&*TTF, &*DBLINK];
+    handlers
+}
+
+//msg功能注册函数
+fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
+    let handlers: Vec<Box<dyn FnHandler + Send + Sync>> = vec![
+        Box::new(Test {
+            status: AtomicBool::from(false),
+        }),
+        Box::new(EmoMjk {
+            enable: true,
+            status: AtomicBool::from(false),
+        }),
+        Box::new(Play {
+            status: AtomicBool::from(false),
+        }),
+        Box::new(Help {
+            status: AtomicBool::from(false),
+        }),
+        Box::new(TTT {
+            enable: true,
+            status: AtomicBool::from(false),
+        }),
+        Box::new(MemPhoto {
+            status: AtomicBool::from(false),
+        }),
+        Box::new(PlusOne {
+            status: AtomicBool::from(false),
+            map: OnceLock::new(),
+        }),
+    ];
+    handlers
+}
+//notice功能注册函数
+fn notice_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
+    let handlers: Vec<Box<dyn FnHandler + Send + Sync>> = vec![Box::new(Poke {
+        status: AtomicBool::from(false),
+    })];
+    handlers
+}
+//模块功能初始化函数
 async fn mod_handlers_init() {
     let handlers = mod_handler_regin();
     mian_init(Handler::Mods(handlers)).await;
 }
-//功能函数初始化
-async fn msg_handlers_init() -> Vec<Box<dyn FnHandler + Send + Sync>> {
-    //注册功能模块
-    let handlers = msg_handler_regin();
-    //取出handler并执行初始化方法
-    if let Handler::Funcs(a) = mian_init(Handler::Funcs(handlers)).await {
-        return a;
-    }
-    panic!()
-}
-async fn mian_init(handlers: Handler) -> Handler {
-    let mut ok_list: String = String::new();
-    let mut err_list: String = String::new();
+//模块功能初始化主函数
+async fn mian_init(handlers: Handler) {
     match handlers {
-        Handler::Funcs(handlers) => {
-            let mut init_handlers: Vec<Box<dyn FnHandler + Send + Sync>> = vec![];
-            for mut handler in handlers {
-                let ok = handler.init().await;
-                if ok {
-                    ok_list.push_str(format!("<{}>", handler.name().await).as_str());
-                } else {
-                    err_list.push_str(format!("<{}>", handler.name().await).as_str());
-                }
-                init_handlers.push(handler)
+        Handler::MsgFn(handlers) => {
+            let _ = MSG_HANDLERS.set(handlers);
+            for handler in MSG_HANDLERS.get().unwrap().iter() {
+                spawn(async move {
+                    let _ = &handler.init().await;
+                    log_init(handler.name().await, handler.status().await).await;
+                });
             }
-            info!("功能{}初始化成功√", ok_list);
-            if !err_list.is_empty() {
-                warn!("功能{}初始化失败×", err_list);
+        }
+        Handler::NtcFn(handlers) => {
+            let _ = NOTICE_HANDLERS.set(handlers);
+            for handler in NOTICE_HANDLERS.get().unwrap().iter() {
+                spawn(async move {
+                    let _ = &handler.init().await;
+                    log_init(handler.name().await, handler.status().await).await;
+                });
             }
-            Handler::Funcs(init_handlers)
         }
         Handler::Mods(handlers) => {
             for handler in handlers {
-                let ok = handler.init().await;
-                if ok {
-                    ok_list.push_str(format!("<{}>", handler.name().await).as_str());
-                } else {
-                    err_list.push_str(format!("<{}>", handler.name().await).as_str());
-                }
+                spawn(async move {
+                    handler.init().await;
+                    log_init(handler.name().await,handler.init_status().await).await;
+                });
             }
-            info!("模块{}初始化成功√", ok_list);
-            if !err_list.is_empty() {
-                warn!("模块{}初始化失败×", err_list);
-            }
-            Handler::None(())
         }
-        _ => Handler::None(()),
     }
+}
+
+//msg功能函数初始化
+async fn msg_handlers_init() {
+    //注册功能模块
+    let handlers = msg_handler_regin();
+    //取出handler并执行初始化方法
+    mian_init(Handler::MsgFn(handlers)).await;
+}
+
+//notice功能函数初始化
+async fn notice_handlers_init() {
+    let handlers = notice_handler_regin();
+    mian_init(Handler::NtcFn(handlers)).await;
 }
 
 //判断黑白名单
@@ -253,36 +305,10 @@ fn log_msg(msg: &Msg) {
         );
     }
 }
-fn mod_handler_regin() -> Vec<Box<dyn ModHandler + Send + Sync>> {
-    let handlers: Vec<Box<dyn ModHandler + Send + Sync>> = vec![
-        Box::new(TtfData {
-            status: false,
-            ttf: Default::default(),
-        }),
-        Box::new(DbLink {
-            status: false,
-            db_link: Default::default(),
-        }),
-    ];
-    handlers
-}
-//注册功能函数
-fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
-    let handlers: Vec<Box<dyn FnHandler + Send + Sync>> = vec![
-        Box::new(Test { status: false }),
-        Box::new(EmoMjk { status: false }),
-        Box::new(Play { status: false }),
-        Box::new(Help { status: false }),
-        Box::new(TTT { status: false }),
-        Box::new(MemPhoto { status: false }),
-        Box::new(PlusOne {
-            status: false,
-            map: OnceLock::new(),
-        }),
-    ];
-    handlers
-}
-fn notice_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
-    let handlers: Vec<Box<dyn FnHandler + Send + Sync>> = vec![Box::new(Poke { status: false })];
-    handlers
+async fn log_init(name: String,ok:bool) {
+    if ok {
+        info!("<{}>初始化成功", name);
+    } else {
+        warn!("<{}>初始化失败", name);
+    }
 }

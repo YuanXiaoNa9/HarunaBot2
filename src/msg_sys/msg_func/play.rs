@@ -1,33 +1,30 @@
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 pub struct Play {
-    pub(crate) status: bool,
+    pub(crate) status: AtomicBool,
 }
 #[async_trait]
 impl FnHandler for Play {
-    async fn matches(&self, msg: Arc<Msg>) -> bool {
+    async fn matches(&self, msg: &Msg) -> bool {
         msg.raw_message.contains(r#"title":"QQ经典农场"#)
     }
 
-    async fn process(&self, msg: Arc<Msg>) {
+    async fn process(&self, msg: &Msg) {
         let mut rep = SendMsg::new().await;
         rep.join_text("不许给我转QQ农场喵".to_string()).await;
-        rep.send_msg(msg.clone()).await;
+        rep.send_msg(msg).await;
         let mut rep1 = SendMsg::new().await;
         rep1.join_text("本喵会不开心的喵".to_string()).await;
-        rep1.send_msg(msg.clone()).await;
+        rep1.send_msg(msg).await;
     }
 
-    async fn init(&mut self) -> bool {
-        self.status = true;
-        true
-    }
+    async fn init(&self) {}
 
     async fn status(&self) -> bool {
-        self.status
+        true
     }
 
     async fn help(&self) -> String {

@@ -2,6 +2,7 @@ use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
 use dashmap::DashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock};
 use tracing::debug;
 
@@ -12,19 +13,19 @@ pub struct PlusOneData {
 }
 
 pub struct PlusOne {
-    pub(crate) status: bool,
+    pub(crate) status: AtomicBool,
     pub(crate) map: OnceLock<DashMap<i64, PlusOneData>>,
 }
 #[async_trait]
 impl FnHandler for PlusOne {
-    async fn matches(&self, msg: Arc<Msg>) -> bool {
+    async fn matches(&self, msg: &Msg) -> bool {
         if msg.message_type == "group" {
             return true;
         }
         false
     }
 
-    async fn process(&self, msg: Arc<Msg>) {
+    async fn process(&self, msg: &Msg) {
         let raw_message = msg
             .raw_message
             .clone()
@@ -57,10 +58,10 @@ impl FnHandler for PlusOne {
             if data.user_id == self_id && i == 1 && user_id != self_id {
                 let mut rep = SendMsg::new().await;
                 rep.join_text("不要复读人家喵".to_string()).await;
-                rep.send_msg(msg.clone()).await;
+                rep.send_msg(msg).await;
                 let mut rep = SendMsg::new().await;
                 rep.join_text("打断复读喵".to_string()).await;
-                rep.send_msg(msg.clone()).await;
+                rep.send_msg(msg).await;
                 return;
             };
             drop(data);
@@ -95,14 +96,12 @@ impl FnHandler for PlusOne {
         }
     }
 
-    async fn init(&mut self) -> bool {
-        self.map = OnceLock::from(DashMap::new());
-        self.status = true;
-        self.status
+    async fn init(&self) {
+        let _ = self.map.set(DashMap::new());
     }
 
     async fn status(&self) -> bool {
-        self.status
+        true
     }
 
     async fn help(&self) -> String {

@@ -10,14 +10,16 @@ use image::ImageFormat::Png;
 use image::{ImageReader, Rgba};
 use imageproc::drawing::draw_text_mut;
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 
 pub struct EmoMjk {
-    pub(crate) status: bool,
+    pub(crate) status: AtomicBool,
+    pub(crate) enable: bool,
 }
 #[async_trait]
 impl FnHandler for EmoMjk {
-    async fn matches(&self, msg: Arc<Msg>) -> bool {
+    async fn matches(&self, msg: &Msg) -> bool {
         let mut splits = msg.raw_message.split(" ");
         let start_str = splits.next().unwrap();
         if (start_str == "睦说"
@@ -34,7 +36,7 @@ impl FnHandler for EmoMjk {
         }
     }
 
-    async fn process(&self, msg: Arc<Msg>) {
+    async fn process(&self, msg: &Msg) {
         let mut splits = msg.raw_message.split(" ");
         let name = splits.next().unwrap();
         let mut file_name: &str = "";
@@ -69,13 +71,7 @@ impl FnHandler for EmoMjk {
         let i: f32 = text
             .chars()
             .map(|c| {
-                let scaled_font = TTF
-                    .get()
-                    .unwrap()
-                    .ttf
-                    .get()
-                    .unwrap()
-                    .as_scaled(PxScale::from(size));
+                let scaled_font = TTF.ttf.get().unwrap().as_scaled(PxScale::from(size));
                 let id = scaled_font.glyph_id(c);
                 scaled_font.h_advance(id)
             })
@@ -94,7 +90,7 @@ impl FnHandler for EmoMjk {
             x,
             y,
             PxScale::from(size),
-            &TTF.get().unwrap().ttf.get().unwrap(),
+            &TTF.ttf.get().unwrap(),
             text,
         );
         let end_time = pic_start_time.elapsed();
@@ -117,19 +113,37 @@ impl FnHandler for EmoMjk {
             .await;
         }
         rep.join_text(format!("耗时:{:?}", end_time)).await;
-        rep.send_msg(msg.clone()).await;
+        rep.send_msg(&msg).await;
         if MAIN_CONFIG.nc_setting.img_send_way == "file" {
             std::fs::remove_file(format!("{}/temp/{}.png", PATH.as_str(), file_name).to_string())
                 .unwrap();
         }
     }
 
-    async fn init(&mut self) -> bool {
-        self.status = TTF.get().unwrap().status;
-        self.status
+    async fn init(&self) {
+        if !self.enable {
+            return;
+        }
+        let mut rx = TTF.rx.clone();
+        if *rx.borrow_and_update() {
+            self.status.store(true, Relaxed);
+        } else {
+            loop {
+                let _ = rx.changed().await;
+                if *rx.borrow_and_update() {
+                    self.status.store(true, Relaxed);
+                    break;
+                } else {
+                    continue;
+                }
+            }
+        }
     }
     async fn status(&self) -> bool {
-        self.status
+        if self.enable && self.status.load(Relaxed) {
+            return true;
+        }
+        false
     }
 
     async fn help(&self) -> String {

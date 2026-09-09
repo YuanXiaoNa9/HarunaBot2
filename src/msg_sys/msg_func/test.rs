@@ -1,27 +1,22 @@
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 pub struct Test {
-    pub(crate) status: bool,
+    pub status: AtomicBool,
 }
 
 #[async_trait]
 impl FnHandler for Test {
-    async fn matches(&self, _msg: Arc<Msg>) -> bool {
+    async fn matches(&self, _msg: &Msg) -> bool {
         false
     }
 
-    async fn process(&self, _msg: Arc<Msg>) {
-        todo!()
-    }
+    async fn process(&self, _msg: &Msg) {}
 
-    async fn init(&mut self) -> bool {
-        self.status = true;
-        true
-    }
+    async fn init(&self) {}
     async fn status(&self) -> bool {
-        self.status
+        true
     }
 
     async fn help(&self) -> String {
