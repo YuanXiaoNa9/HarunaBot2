@@ -1,5 +1,6 @@
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use anyhow::Error;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::atomic::AtomicBool;
@@ -25,7 +26,7 @@ impl FnHandler for PlusOne {
         false
     }
 
-    async fn process(&self, msg: &Msg) {
+    async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let raw_message = msg
             .raw_message
             .clone()
@@ -45,7 +46,7 @@ impl FnHandler for PlusOne {
                     },
                 );
                 debug!("no find plusone map");
-                return;
+                return Ok(());
             }
             Some(data) => data,
         };
@@ -62,7 +63,7 @@ impl FnHandler for PlusOne {
                 let mut rep = SendMsg::new().await;
                 rep.join_text("打断复读喵".to_string()).await;
                 rep.send_msg(msg).await;
-                return;
+                return Ok(());
             };
             drop(data);
             self.map.get().unwrap().insert(
@@ -85,15 +86,16 @@ impl FnHandler for PlusOne {
                 },
             );
             debug!("different msg");
-            return;
+            return Ok(());
         }
         if i == 2 {
             let mut rep = SendMsg::new().await;
             rep.join_text(msg.raw_message.clone()).await;
             rep.send_msg(msg).await;
             debug!("plusone ok");
-            return;
+            return Ok(());
         }
+        Ok(())
     }
 
     async fn init(&self) {

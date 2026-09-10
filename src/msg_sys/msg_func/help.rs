@@ -1,5 +1,6 @@
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, MSG_HANDLERS, Msg};
+use anyhow::Error;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
 use tracing::debug;
@@ -18,15 +19,15 @@ impl FnHandler for Help {
         false
     }
 
-    async fn process(&self, msg: &Msg) {
+    async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let mut splits = msg.raw_message.split(" ");
         splits.next();
         let mut rep = SendMsg::new().await;
         if splits.next().is_none() {
             debug!("return help list");
             rep.join_text(self.help().await).await;
-            rep.send_msg(msg.clone()).await;
-            return;
+            rep.send_msg(msg).await;
+            return Ok(());
         }
         let mut unfind_help = String::new();
         rep.join_text("help list".to_string()).await;
@@ -49,8 +50,8 @@ impl FnHandler for Help {
             rep.join_text(format!("\n\n未找到帮助项:{}", unfind_help))
                 .await;
         }
-        rep.send_msg(msg.clone()).await;
-        return;
+        rep.send_msg(msg).await;
+        Ok(())
     }
 
     async fn init(&self) {}

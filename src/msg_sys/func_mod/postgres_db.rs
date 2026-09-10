@@ -5,7 +5,7 @@ use sqlx::{Pool, Postgres};
 use std::sync::LazyLock;
 use tokio::sync::{OnceCell, watch};
 use tokio::time::sleep;
-use tracing::{error};
+use tracing::error;
 
 pub static DBLINK: LazyLock<DbLink> = LazyLock::new(db_init);
 fn db_init() -> DbLink {

@@ -171,6 +171,11 @@ impl SendMsg {
             self.user_id = msg.sender.user_id;
             self.group_id = msg.group_id;
         }
+        if self.group_id == 0 {
+            self.message_type = "private".to_string();
+        } else {
+            self.message_type = "group".to_string();
+        }
 
         debug!("try send msg");
         send(&PostType::Message(self), "send_forward_msg".to_string()).await;

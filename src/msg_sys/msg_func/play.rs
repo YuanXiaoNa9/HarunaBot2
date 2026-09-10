@@ -1,5 +1,6 @@
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use anyhow::Error;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
 
@@ -12,13 +13,14 @@ impl FnHandler for Play {
         msg.raw_message.contains(r#"title":"QQ经典农场"#)
     }
 
-    async fn process(&self, msg: &Msg) {
+    async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let mut rep = SendMsg::new().await;
         rep.join_text("不许给我转QQ农场喵".to_string()).await;
         rep.send_msg(msg).await;
         let mut rep1 = SendMsg::new().await;
         rep1.join_text("本喵会不开心的喵".to_string()).await;
         rep1.send_msg(msg).await;
+        Ok(())
     }
 
     async fn init(&self) {}

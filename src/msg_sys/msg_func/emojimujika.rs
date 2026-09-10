@@ -3,6 +3,7 @@ use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use crate::{MAIN_CONFIG, PATH};
 use ab_glyph::{Font, PxScale, ScaleFont};
+use anyhow::Error;
 use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose;
@@ -36,7 +37,7 @@ impl FnHandler for EmoMjk {
         }
     }
 
-    async fn process(&self, msg: &Msg) {
+    async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let mut splits = msg.raw_message.split(" ");
         let name = splits.next().unwrap();
         let mut file_name: &str = "";
@@ -61,10 +62,8 @@ impl FnHandler for EmoMjk {
             .strip_prefix(format!("{} ", name).as_str())
             .unwrap();
         let pic_start_time = std::time::Instant::now();
-        let mut img = ImageReader::open(format!("{}/pic/{}.png", PATH.as_str(), file_name))
-            .unwrap()
-            .decode()
-            .unwrap();
+        let mut img =
+            ImageReader::open(format!("{}/pic/{}.png", PATH.as_str(), file_name))?.decode()?;
         let ori_y = img.height() as f32;
         let y = (ori_y * 0.15333) as i32;
         let size = ori_y / 6.2;
@@ -105,8 +104,7 @@ impl FnHandler for EmoMjk {
             let b64 = general_purpose::STANDARD.encode(buf.into_inner());
             rep.join_image(format!("base64://{}", b64)).await;
         } else if MAIN_CONFIG.nc_setting.img_send_way == "file" {
-            img.save(format!("{}/temp/{}.png", PATH.as_str(), file_name))
-                .unwrap();
+            img.save(format!("{}/temp/{}.png", PATH.as_str(), file_name))?;
             rep.join_image(
                 format!("{}/{}.png", MAIN_CONFIG.docker_path.as_str(), file_name).to_string(),
             )
@@ -115,9 +113,9 @@ impl FnHandler for EmoMjk {
         rep.join_text(format!("耗时:{:?}", end_time)).await;
         rep.send_msg(&msg).await;
         if MAIN_CONFIG.nc_setting.img_send_way == "file" {
-            std::fs::remove_file(format!("{}/temp/{}.png", PATH.as_str(), file_name).to_string())
-                .unwrap();
+            std::fs::remove_file(format!("{}/temp/{}.png", PATH.as_str(), file_name).to_string())?;
         }
+        Ok(())
     }
 
     async fn init(&self) {

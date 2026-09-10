@@ -1,6 +1,8 @@
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
+use anyhow_trace::anyhow_trace;
 
 pub struct Test {
     pub status: AtomicBool,
@@ -8,11 +10,16 @@ pub struct Test {
 
 #[async_trait]
 impl FnHandler for Test {
-    async fn matches(&self, _msg: &Msg) -> bool {
+    async fn matches(&self, msg: &Msg) -> bool {
+        if msg.raw_message == "test" {
+            return true;
+        }
         false
     }
-
-    async fn process(&self, _msg: &Msg) {}
+    #[anyhow_trace]
+    async fn process(&self, _msg: &Msg) -> Result<(), Error> {
+        Err(anyhow!("test err"))
+    }
 
     async fn init(&self) {}
     async fn status(&self) -> bool {

@@ -9,18 +9,20 @@ use crate::msg_sys::msg_func::play::Play;
 use crate::msg_sys::msg_func::plusone::PlusOne;
 use crate::msg_sys::msg_func::test::Test;
 use crate::msg_sys::msg_func::ttt::TTT;
+use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::notice_func::poke::Poke;
 use ab_glyph::FontVec;
+use anyhow::Error;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
+use anyhow_trace::anyhow_trace;
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::log::warn;
 use tracing::{debug, error, info};
-use tracing::log::__private_api::log;
 
 enum Handler {
     MsgFn(Vec<Box<dyn FnHandler + Send + Sync>>),
@@ -33,7 +35,8 @@ pub static NOTICE_HANDLERS: OnceLock<Vec<Box<dyn FnHandler + Send + Sync>>> = On
 #[async_trait]
 pub trait FnHandler {
     async fn matches(&self, _: &Msg) -> bool;
-    async fn process(&self, _: &Msg);
+    #[anyhow_trace]
+    async fn process(&self, _: &Msg) -> Result<(), Error>;
     async fn init(&self);
     async fn status(&self) -> bool;
     async fn help(&self) -> String;
@@ -153,7 +156,14 @@ async fn msg_dispatch(msg: Msg) {
         //使用handler的match方法进行判断消息是否符合
         if handler.status().await && handler.matches(&msg).await {
             debug!("find msg handler");
-            handler.process(&msg).await;
+            let res = handler.process(&msg).await;
+            if res.is_err() {
+                let err = res.unwrap_err();
+                error!("{}", err);
+                let mut rep = SendMsg::new().await;
+                rep.join_text(format!("{:#}", err).to_string()).await;
+                rep.send_forward_msg(&msg).await;
+            }
             return;
         }
     }
@@ -161,12 +171,21 @@ async fn msg_dispatch(msg: Msg) {
 }
 
 //notice消息dispatch，由msg_analysis路由
+#[anyhow_trace]
 async fn notice_dispatch(msg: Msg) {
     debug!("finding notice handler");
     for handler in NOTICE_HANDLERS.get().unwrap().iter() {
         if handler.status().await && handler.matches(&msg).await {
             debug!("find notice handler");
-            handler.process(&msg).await;
+            let res = handler.process(&msg).await;
+            if res.is_err() {
+                let err = res.unwrap_err();
+                error!("{}", err);
+                let mut rep = SendMsg::new().await;
+                rep.join_text(format!("{:#}", err).to_string()).await;
+                rep.send_forward_msg(&msg).await;
+            }
+            return;
         }
     }
     debug!("not find handler");
@@ -245,7 +264,7 @@ async fn mian_init(handlers: Handler) {
             for handler in handlers {
                 spawn(async move {
                     handler.init().await;
-                    log_init(handler.name().await,handler.init_status().await).await;
+                    log_init(handler.name().await, handler.init_status().await).await;
                 });
             }
         }
@@ -305,10 +324,11 @@ fn log_msg(msg: &Msg) {
         );
     }
 }
-async fn log_init(name: String,ok:bool) {
+async fn log_init(name: String, ok: bool) {
     if ok {
         info!("<{}>初始化成功", name);
     } else {
         warn!("<{}>初始化失败", name);
     }
 }
+

@@ -1,6 +1,7 @@
 use crate::msg_sys::msg_reply::{SendMsg, http_ip_process};
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use crate::{HTTP_CLIENT, MAIN_CONFIG, PATH};
+use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use base64::Engine;
 use image::ImageFormat::Png;
@@ -29,27 +30,20 @@ impl FnHandler for MemPhoto {
         false
     }
 
-    async fn process(&self, msg: &Msg) {
+    async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let start = std::time::Instant::now();
         let id = get_img_id(msg).await;
         let id = match id {
             None => {
-                return;
+                return Err(anyhow!("未找到图片id"));
             }
             Some(id) => id,
         };
         let bytes = get_img(id).await;
         let img = ImageReader::new(Cursor::new(&bytes))
-            .with_guessed_format()
-            .unwrap()
+            .with_guessed_format()?
             .decode();
-        let mut img = match img {
-            Ok(img) => img,
-            Err(e) => {
-                error!("{:?}", e);
-                return;
-            }
-        };
+        let mut img = img?;
         let proportion: f32;
         let (ori_x, ori_y) = img.dimensions();
         if ori_x > ori_y {
@@ -73,19 +67,18 @@ impl FnHandler for MemPhoto {
         } else {
             end_img = img.crop(0, 0, 515, 515);
         }
-        let mut ground_img = ImageReader::open(format!("{}/pic/die.jpg", PATH.as_str()))
-            .unwrap()
-            .decode()
-            .unwrap();
+        let mut ground_img =
+            ImageReader::open(format!("{}/pic/die.jpg", PATH.as_str()))?.decode()?;
         let end_img = end_img.grayscale();
         overlay(&mut ground_img, &end_img, 126, 107);
         let mut buf = Cursor::new(Vec::new());
-        ground_img.write_to(&mut buf, Png).unwrap();
+        ground_img.write_to(&mut buf, Png)?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
         let mut rep = SendMsg::new().await;
         rep.join_image(format!("base64://{}", b64)).await;
         rep.join_text(format!("耗时:{:?}", start.elapsed())).await;
         rep.send_msg(msg).await;
+        Ok(())
     }
 
     async fn init(&self) {}

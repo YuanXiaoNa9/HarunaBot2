@@ -1,5 +1,6 @@
 use crate::msg_sys::msg_reply::SendPoke;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use anyhow::Error;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
@@ -19,12 +20,13 @@ impl FnHandler for Poke {
         false
     }
 
-    async fn process(&self, msg: &Msg) {
+    async fn process(&self, msg: &Msg) -> Result<(), Error> {
         if msg.group_id == 0 {
             SendPoke::private(msg.user_id).await;
         } else {
             SendPoke::group(msg.group_id, msg.user_id).await;
         }
+        Ok(())
     }
 
     async fn init(&self) {
