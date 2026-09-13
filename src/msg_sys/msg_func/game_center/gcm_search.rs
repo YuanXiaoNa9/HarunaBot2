@@ -6,6 +6,7 @@ use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use crate::msg_sys::msg_func::game_center::sub_matches;
 
 pub struct GCMSearch {
     status: AtomicBool,
@@ -13,13 +14,7 @@ pub struct GCMSearch {
 #[async_trait]
 impl FnHandler for GCMSearch {
     async fn matches(&self, msg: &Msg) -> bool {
-        let mut splits = msg.raw_message.split(" ");
-        splits.next();
-        let a = splits.next();
-        if a.is_none() || a.unwrap() != self.name().await {
-            return false;
-        }
-        true
+        sub_matches(msg,self.name().await)
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {

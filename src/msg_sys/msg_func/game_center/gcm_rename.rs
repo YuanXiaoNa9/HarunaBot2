@@ -1,5 +1,5 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::useable_judgment;
+use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -14,13 +14,7 @@ pub struct GCMRename {
 #[async_trait]
 impl FnHandler for GCMRename {
     async fn matches(&self, msg: &Msg) -> bool {
-        let mut splits = msg.raw_message.split(" ");
-        splits.next();
-        let a = splits.next();
-        if a.is_none() || a.unwrap() != self.name().await {
-            return false;
-        }
-        true
+        sub_matches(msg,self.name().await)
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
@@ -67,7 +61,7 @@ impl FnHandler for GCMRename {
             }
             return Err(anyhow!("{}\n\n请使用机厅id进行",query_list))
         } else {
-            let _ = sqlx::query!("update gc_name set name = $1 where name = $2 and gid = $3 and gc_id = $4",new_name,res[0].name,msg.group_id,res[0].gc_id).execute(&mut *tx).await?;
+            let _ = sqlx::query!("update gc_name set name = $1 where name = $2 and gid = $3 and gc_id = $4",new_name,gc_name,msg.group_id,res[0].gc_id).execute(&mut *tx).await?;
             tx.commit().await?;
             let mut rep =SendMsg::new().await;
             rep.join_text(format!("成功修改机厅名字\nid:{}\nold_name:{}\nnew_name:{}",res[0].gc_id,gc_name,new_name)).await;

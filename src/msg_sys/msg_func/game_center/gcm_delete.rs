@@ -1,5 +1,5 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::useable_judgment;
+use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::{anyhow, Error};
@@ -14,13 +14,7 @@ pub struct GCMDelete {
 #[async_trait]
 impl FnHandler for GCMDelete {
     async fn matches(&self, msg: &Msg) -> bool {
-        let mut splits = msg.raw_message.split(" ");
-        splits.next();
-        let a = splits.next();
-        if a.is_some() && a.unwrap() == self.name().await {
-            return true;
-        }
-        false
+        sub_matches(msg,self.name().await)
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {

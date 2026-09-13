@@ -1,5 +1,5 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::useable_judgment;
+use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -14,13 +14,7 @@ pub struct GCMAddName {
 #[async_trait]
 impl FnHandler for GCMAddName {
     async fn matches(&self, msg: &Msg) -> bool {
-        let mut splits = msg.raw_message.split(" ");
-        splits.next();
-        let a = splits.next();
-        if a.is_some() && a.unwrap() == self.name().await {
-            return true;
-        }
-        false
+        sub_matches(msg,self.name().await)
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
@@ -50,14 +44,17 @@ impl FnHandler for GCMAddName {
             }
             return Err(anyhow!(rep))
         }
-        let old_name = res[0].name.clone().unwrap();
-        if old_name.contains(vec_splits[3]){
-            return Err(anyhow!("名字出现重复，不要为一个机厅添加相同的名字"))
+        let old_names = res[0].name.clone().unwrap();
+        let old_name_split = old_names.split(" ");
+        for old_name in old_name_split {
+            if old_name.contains(vec_splits[3]){
+                return Err(anyhow!("名字出现重复，不要为一个机厅添加相同的名字"))
+            }
         }
         sqlx::query!("insert into gc_name (gc_id,gid,name)values ($1,$2,$3)",res[0].gc_id,msg.group_id,vec_splits[3]).execute(&mut *tx).await?;
         tx.commit().await?;
         let mut rep = SendMsg::new().await;
-        rep.join_text(format!("添加名字成功\nid: {}\nname: {} {}\n备注: {}",res[0].gc_id,old_name,name,res[0].description)).await;
+        rep.join_text(format!("添加名字成功\nid: {}\nname: {} {}\n备注: {}",res[0].gc_id,old_names,name,res[0].description)).await;
         rep.send_forward_msg(msg).await;
         Ok(())
     }

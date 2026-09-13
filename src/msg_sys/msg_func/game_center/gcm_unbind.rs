@@ -1,5 +1,5 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::useable_judgment;
+use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::{Error, anyhow};
 use anyhow_trace::anyhow_trace;
@@ -14,13 +14,7 @@ pub struct GCMUnbind {
 #[async_trait]
 impl FnHandler for GCMUnbind {
     async fn matches(&self, msg: &Msg) -> bool {
-        let mut splits = msg.raw_message.split(" ");
-        splits.next();
-        let a = splits.next();
-        if a.is_some() && a.unwrap() == self.name().await {
-            return true;
-        }
-        false
+        sub_matches(msg,self.name().await)
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
@@ -47,7 +41,7 @@ impl FnHandler for GCMUnbind {
             description:String,
             admin_gid:i64,
         }
-        let res = sqlx::query_as!(Data,"with matches as (select gc_id from gc_name where (($2::bigint is null or gc_id = $2::bigint) or ($1::text is null or name = $1::text))and gid = $3) select gc_name.gc_id,string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description,gamecenterdata.admin_gid from gc_name inner join matches on gc_name.gc_id = matches.gc_id inner join gamecenterdata on gc_name.gc_id = gamecenterdata.gc_id group by gc_name.gc_id,gamecenterdata.description,gamecenterdata.admin_gid",name,id,msg.group_id).fetch_all(&mut *tx).await?;
+        let res = sqlx::query_as!(Data,"with matches as (select gc_id from gc_name where (($2::bigint is null or gc_id = $2::bigint) and ($1::text is null or name = $1::text))and gid = $3) select gc_name.gc_id,string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description,gamecenterdata.admin_gid from gc_name inner join matches on gc_name.gc_id = matches.gc_id inner join gamecenterdata on gc_name.gc_id = gamecenterdata.gc_id group by gc_name.gc_id,gamecenterdata.description,gamecenterdata.admin_gid",name,id,msg.group_id).fetch_all(&mut *tx).await?;
         if res.len() == 0 {
             return Err(anyhow!("未找到符合条件的机厅"));
         }else if res.len() > 1 {
@@ -66,6 +60,7 @@ impl FnHandler for GCMUnbind {
             let mut rep = SendMsg::new().await;
             rep.join_reply(msg.message_id).await;
             rep.join_text(format!("成功解除机厅绑定\nid:{}\nname:{}\n备注:{}",res[0].gc_id,res[0].name.clone().unwrap(),res[0].description)).await;
+            rep.send_msg(msg).await;
         }
         Ok(())
     }

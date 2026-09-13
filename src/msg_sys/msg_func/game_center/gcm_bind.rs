@@ -5,7 +5,7 @@ use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use futures_util::TryFutureExt;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::useable_judgment;
+use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 
@@ -15,13 +15,7 @@ pub struct GCMBind{
 #[async_trait]
 impl FnHandler for GCMBind {
     async fn matches(&self, msg: &Msg) -> bool {
-        let mut splits = msg.raw_message.split(" ");
-        splits.next();
-        let a = splits.next();
-        if a.is_some() && a.unwrap() == self.name().await {
-            return true;
-        }
-        false
+        sub_matches(msg,self.name().await)
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
@@ -34,20 +28,27 @@ impl FnHandler for GCMBind {
         let new_name = vec_msg[3];
         let bind_id = vec_msg[2].parse::<i64>()?;
         let mut tx = DBLINK.db_link.get().unwrap().clone().begin().await?;
+        #[derive(Debug)]
         struct Data{
             description:String,
             admin_gid: i64,
         }
-        let res = sqlx::query_as!(Data,"select description,admin_gid from gamecenterdata where gc_id = $1",bind_id).fetch_one(&mut *tx).await?;
-        if res.admin_gid == msg.group_id {
-            return Err(anyhow!("不能绑定该群聊创建的机厅"));
+        let res = sqlx::query_as!(Data,"select description,admin_gid from gamecenterdata where gc_id = $1",bind_id).fetch_all(&mut *tx).await?;
+        if res.len() == 0 {
+            return Err(anyhow!("未找到符合条件的机厅，请检查机厅id是否正确"));
+        }else if res.len() > 1 { 
+            return Err(anyhow!(format!("寻找到多个数据，神秘未知错误{:?}",res)))
+        }else {
+            if res[0].admin_gid == msg.group_id {
+                return Err(anyhow!("不能绑定该群聊创建的机厅"));
+            }
+            sqlx::query!("insert into gc_name (gc_id,name,gid) values ($1,$2,$3)",bind_id,new_name,msg.group_id).execute(&mut *tx).await?;
+            tx.commit().await?;
+            let mut rep = SendMsg::new().await;
+            rep.join_reply(msg.message_id).await;
+            rep.join_text(format!("绑定机厅成功\nid: {}\nname: {}\n机厅备注: {}",bind_id,new_name,res[0].description)).await;
+            rep.send_msg(msg).await;
         }
-        sqlx::query!("insert into gc_name (gc_id,name,gid) values ($1,$2,$3)",bind_id,new_name,msg.group_id).execute(&mut *tx).await?;
-        tx.commit().await?;
-        let mut rep = SendMsg::new().await;
-        rep.join_reply(msg.message_id).await;
-        rep.join_text(format!("绑定机厅成功\nid: {}\nname: {}\n机厅备注: {}",bind_id,new_name,res.description)).await;
-        rep.send_msg(msg).await;
         Ok(())
     }
 

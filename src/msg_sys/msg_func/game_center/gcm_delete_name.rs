@@ -5,7 +5,7 @@ use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use sqlx::{Acquire, Row};
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::useable_judgment;
+use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 
@@ -15,13 +15,7 @@ pub struct GCMDeleteName{
 #[async_trait]
 impl FnHandler for GCMDeleteName {
     async fn matches(&self, msg: &Msg) -> bool {
-        let mut splits = msg.raw_message.split(" ");
-        splits.next();
-        let a = splits.next();
-        if a.is_some() && a.unwrap() == self.name().await {
-            return true;
-        }
-        false
+        sub_matches(msg,self.name().await)
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
@@ -57,7 +51,7 @@ impl FnHandler for GCMDeleteName {
             }
             rep.push_str("\n\n请使用:\n/机厅管理 删除名字 <id> <name>\n来指定删除的名字");
         }else {
-            let data = res.get(0)?;
+            let data = res.get(0).unwrap();
             let res1:(i64,)  = sqlx::query_as("select count(*) from gc_name where gc_id = $1").bind(data.gc_id).fetch_one(&mut *tx).await?;
             if res1.0 == 1{
                 return Err(anyhow!("当前机厅名字数量为1，无法进行删除名字操作，至少为机厅保持一个名字，如需删除，请使用删除机厅"))

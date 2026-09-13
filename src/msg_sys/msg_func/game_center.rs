@@ -153,4 +153,12 @@ pub async fn useable_judgment(msg: &Msg) -> Result<(),Error> {
     }
     Ok(())
 }
-
+pub (self) fn sub_matches(msg: &Msg,name: String) -> bool {
+    let mut splits = msg.raw_message.split(" ");
+    splits.next();
+    let a = splits.next();
+    if a.is_some() && a.unwrap() == name {
+        return true;
+    }
+    false
+}
