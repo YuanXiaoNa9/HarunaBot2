@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::func_mod::ttf::TTF;
-use crate::msg_sys::msg_reply::Data::{Face, File, Image, Node, Record, Text, Video};
+use crate::msg_sys::msg_reply::Data::{Face, File, Image, Node, Record, Reply, Text, Video};
 use crate::msg_sys::msg_reply::PostType::Poke;
 use crate::msg_sys::msg_sys::{ModData, Msg, MsgSender};
 use crate::qq_link::SEND_CHAN;
@@ -29,6 +29,7 @@ enum Data {
     Text(DataText),
     Image(DataImage),
     Face(DataFace),
+    Reply(DataReply),
     Record(DataRecord),
     Video(DataVideo),
     File(DataFile),
@@ -79,9 +80,9 @@ impl SendMsg {
     }
     pub async fn join_reply(&mut self, message_id: i64) {
         self.message.push(Message {
-            r#type: "text".to_string(),
-            data: Text(DataText {
-                text: format!("[CQ:reply,id={}]", message_id),
+            r#type: "reply".to_string(),
+            data: Reply(DataReply {
+                id : message_id,
             }),
         });
     }
@@ -222,9 +223,9 @@ impl DataNode {
     }
     pub async fn join_reply(&mut self, message_id: i64) {
         self.content.push(Message {
-            r#type: "text".to_string(),
-            data: Text(DataText {
-                text: format!("[CQ:reply,id={}]", message_id),
+            r#type: "reply".to_string(),
+            data: Reply(DataReply {
+                id: message_id,
             }),
         });
     }
@@ -267,6 +268,10 @@ struct DataImage {
 #[derive(Serialize, Deserialize, Debug)]
 struct DataFace {
     id: i32,
+}
+#[derive(Serialize, Deserialize, Debug)]
+struct DataReply{
+    id: i64,
 }
 #[derive(Serialize, Deserialize, Debug)]
 struct DataRecord {

@@ -2,8 +2,11 @@ use crate::MAIN_CONFIG;
 use crate::msg_sys::func_config::func_config_get;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::func_mod::ttf::TTF;
-use crate::msg_sys::msg_func::emojimujika::EmoMjk;
-use crate::msg_sys::msg_func::emojiphoto::MemPhoto;
+use crate::msg_sys::msg_func::game_center::GameCenterManager;
+use crate::msg_sys::msg_func::game_center::gcm_add::GCMAdd;
+use crate::msg_sys::msg_func::game_center::gcm_delete::GCMDelete;
+use crate::msg_sys::msg_func::emoji_photo::MemPhoto;
+use crate::msg_sys::msg_func::emoji_say::{EmjSay, EmoMjk};
 use crate::msg_sys::msg_func::help::Help;
 use crate::msg_sys::msg_func::play::Play;
 use crate::msg_sys::msg_func::plusone::PlusOne;
@@ -12,22 +15,28 @@ use crate::msg_sys::msg_func::ttt::TTT;
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::notice_func::poke::Poke;
 use ab_glyph::FontVec;
-use anyhow::Error;
+use anyhow::{anyhow, Error};
+use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
-use anyhow_trace::anyhow_trace;
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::log::warn;
 use tracing::{debug, error, info};
+use crate::msg_sys::msg_func::game_center::gcm_add_name::GCMAddName;
+use crate::msg_sys::msg_func::game_center::gcm_rename::GCMRename;
 
 enum Handler {
     MsgFn(Vec<Box<dyn FnHandler + Send + Sync>>),
     NtcFn(Vec<Box<dyn FnHandler + Send + Sync>>),
     Mods(Vec<&'static (dyn ModHandler + Send + Sync)>),
+}
+pub enum Subroutine {
+    Main(()),
+    EmjSay(EmjSay),
 }
 pub static MSG_HANDLERS: OnceLock<Vec<Box<dyn FnHandler + Send + Sync>>> = OnceLock::new();
 pub static NOTICE_HANDLERS: OnceLock<Vec<Box<dyn FnHandler + Send + Sync>>> = OnceLock::new();
@@ -39,7 +48,7 @@ pub trait FnHandler {
     async fn process(&self, _: &Msg) -> Result<(), Error>;
     async fn init(&self);
     async fn status(&self) -> bool;
-    async fn help(&self) -> String;
+    async fn help(&self, _: &str) -> String;
     async fn name(&self) -> String;
 }
 
@@ -153,19 +162,21 @@ async fn msg_dispatch(msg: Msg) {
     debug!("finding msg handler");
     //取出handler
     for handler in MSG_HANDLERS.get().unwrap().iter() {
+        debug!("match {} handler", handler.name().await);
         //使用handler的match方法进行判断消息是否符合
-        if handler.status().await && handler.matches(&msg).await {
-            debug!("find msg handler");
-            let res = handler.process(&msg).await;
-            if res.is_err() {
-                let err = res.unwrap_err();
-                error!("{}", err);
-                let mut rep = SendMsg::new().await;
-                rep.join_text(format!("{:#}", err).to_string()).await;
-                rep.send_forward_msg(&msg).await;
-            }
-            return;
+        if !handler.status().await || !handler.matches(&msg).await {
+            continue;
         }
+        let res = handler.process(&msg).await;
+        if res.is_err() {
+            let err = res.unwrap_err();
+            error!("{}", err);
+            let mut rep = SendMsg::new().await;
+            rep.join_reply(msg.message_id).await;
+            rep.join_text(format!("{:#}", err).to_string()).await;
+            rep.send_msg(&msg).await;
+        }
+        return;
     }
     debug!("not find handler");
 }
@@ -175,18 +186,19 @@ async fn msg_dispatch(msg: Msg) {
 async fn notice_dispatch(msg: Msg) {
     debug!("finding notice handler");
     for handler in NOTICE_HANDLERS.get().unwrap().iter() {
-        if handler.status().await && handler.matches(&msg).await {
-            debug!("find notice handler");
-            let res = handler.process(&msg).await;
-            if res.is_err() {
-                let err = res.unwrap_err();
-                error!("{}", err);
-                let mut rep = SendMsg::new().await;
-                rep.join_text(format!("{:#}", err).to_string()).await;
-                rep.send_forward_msg(&msg).await;
-            }
-            return;
+        debug!("match {} handler", handler.name().await);
+        if !handler.status().await || !handler.matches(&msg).await {
+            continue;
         }
+        let res = handler.process(&msg).await;
+        if res.is_err() {
+            let err = res.unwrap_err();
+            error!("{}", err);
+            let mut rep = SendMsg::new().await;
+            rep.join_text(format!("{:#}", err).to_string()).await;
+            rep.send_forward_msg(&msg).await;
+        }
+        return;
     }
     debug!("not find handler");
 }
@@ -219,6 +231,22 @@ fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
         }),
         Box::new(MemPhoto {
             status: AtomicBool::from(false),
+        }),
+        Box::new(GameCenterManager {
+            enable: true,
+            status: Default::default(),
+            subfunction: vec![
+                Box::new(GCMAdd {
+                    status: AtomicBool::from(false),
+                }),
+                Box::new(GCMDelete {
+                    status: AtomicBool::from(false),
+                }),
+                Box::new(GCMRename {
+                    status: AtomicBool::from(false),
+                }),
+                Box::new(GCMAddName{status: AtomicBool::from(false)}),
+            ],
         }),
         Box::new(PlusOne {
             status: AtomicBool::from(false),
@@ -312,7 +340,7 @@ async fn bw_right(msg: &Msg) -> bool {
 }
 //打印接收消息
 fn log_msg(msg: &Msg) {
-    if msg.message_type == "group" {
+    if msg.message_type == "group" && msg.sender.user_id!=msg.self_id {
         info!(
             "[{}]({}):[{}]({}) => <{}>",
             msg.group_name, msg.group_id, msg.sender.nickname, msg.sender.user_id, msg.raw_message
@@ -331,4 +359,23 @@ async fn log_init(name: String, ok: bool) {
         warn!("<{}>初始化失败", name);
     }
 }
-
+#[anyhow_trace]
+pub async fn sub_match_process(
+    msg: &Msg,
+    handlers: &Vec<Box<dyn FnHandler + Send + Sync>>,
+) -> Result<(), Error> {
+    for handler in handlers {
+        if !handler.status().await || !handler.matches(msg).await {
+            continue;
+        }
+        handler.process(msg).await?;
+        return Ok(());
+    }
+    Err(anyhow!("参数有误，请检查参数".to_string()))
+}
+pub async fn sub_init(handlers: &Vec<Box<dyn FnHandler + Send + Sync>>) {
+    for handler in handlers {
+        handler.init().await;
+        log_init(handler.name().await, handler.status().await).await;
+    }
+}

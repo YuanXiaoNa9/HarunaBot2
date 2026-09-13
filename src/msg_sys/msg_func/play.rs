@@ -1,6 +1,7 @@
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::Error;
+use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
 
@@ -10,9 +11,12 @@ pub struct Play {
 #[async_trait]
 impl FnHandler for Play {
     async fn matches(&self, msg: &Msg) -> bool {
-        msg.raw_message.contains(r#"title":"QQ经典农场"#)
+        if msg.raw_message.contains(r#"title":"QQ经典农场"#) {
+            return true;
+        }
+        false
     }
-
+    #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let mut rep = SendMsg::new().await;
         rep.join_text("不许给我转QQ农场喵".to_string()).await;
@@ -29,7 +33,7 @@ impl FnHandler for Play {
         true
     }
 
-    async fn help(&self) -> String {
+    async fn help(&self, _: &str) -> String {
         "娱乐功能，或许会有一些小彩蛋".to_string()
     }
 

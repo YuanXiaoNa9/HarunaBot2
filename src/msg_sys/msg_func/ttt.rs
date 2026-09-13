@@ -1,11 +1,13 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg, Subroutine};
 use anyhow::Error;
 use async_trait::async_trait;
+use futures_util::FutureExt;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use anyhow_trace::anyhow_trace;
 use tracing::debug;
 
 pub struct TTT {
@@ -26,7 +28,7 @@ impl FnHandler for TTT {
 
         false
     }
-
+    #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let mut splits = msg.raw_message.split(" ");
         splits.next();
@@ -60,8 +62,7 @@ impl FnHandler for TTT {
         }
         false
     }
-
-    async fn help(&self) -> String {
+    async fn help(&self, _: &str) -> String {
         "开发中".to_string()
     }
 

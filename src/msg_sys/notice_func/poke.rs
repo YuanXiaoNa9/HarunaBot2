@@ -1,7 +1,8 @@
 use crate::msg_sys::msg_reply::SendPoke;
-use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg, Subroutine};
 use anyhow::Error;
 use async_trait::async_trait;
+use std::ops::Sub;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use tracing::log::debug;
@@ -36,8 +37,7 @@ impl FnHandler for Poke {
     async fn status(&self) -> bool {
         self.status.load(Relaxed)
     }
-
-    async fn help(&self) -> String {
+    async fn help(&self, _: &str) -> String {
         "自动回戳".to_string()
     }
 

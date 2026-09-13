@@ -1,8 +1,8 @@
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::{Error, anyhow};
+use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
-use anyhow_trace::anyhow_trace;
 
 pub struct Test {
     pub status: AtomicBool,
@@ -25,8 +25,7 @@ impl FnHandler for Test {
     async fn status(&self) -> bool {
         true
     }
-
-    async fn help(&self) -> String {
+    async fn help(&self, _: &str) -> String {
         "测试使用".to_string()
     }
 

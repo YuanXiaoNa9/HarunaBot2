@@ -1,10 +1,11 @@
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg, Subroutine};
 use anyhow::Error;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock};
+use anyhow_trace::anyhow_trace;
 use tracing::debug;
 
 pub struct PlusOneData {
@@ -25,7 +26,7 @@ impl FnHandler for PlusOne {
         }
         false
     }
-
+    #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let raw_message = msg
             .raw_message
@@ -106,7 +107,7 @@ impl FnHandler for PlusOne {
         true
     }
 
-    async fn help(&self) -> String {
+    async fn help(&self, _: &str) -> String {
         "群聊自动加一，仅在群聊开启".to_string()
     }
 

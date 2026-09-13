@@ -4,6 +4,7 @@ use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use crate::{MAIN_CONFIG, PATH};
 use ab_glyph::{Font, PxScale, ScaleFont};
 use anyhow::Error;
+use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose;
@@ -14,6 +15,14 @@ use std::io::Cursor;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
+pub enum EmjSay {
+    Mutsumi(()),
+    Saki(()),
+    Uika(()),
+    Nyamu(()),
+    Umiru(()),
+    DS(()),
+}
 pub struct EmoMjk {
     pub(crate) status: AtomicBool,
     pub(crate) enable: bool,
@@ -21,52 +30,56 @@ pub struct EmoMjk {
 #[async_trait]
 impl FnHandler for EmoMjk {
     async fn matches(&self, msg: &Msg) -> bool {
-        let mut splits = msg.raw_message.split(" ");
-        let start_str = splits.next().unwrap();
-        if (start_str == "睦说"
-            || start_str == "祥子说"
-            || start_str == "初华说"
-            || start_str == "喵梦说"
-            || start_str == "海铃说"
-            || start_str == "鲸说")
-            && splits.next().is_some()
+        if msg.raw_message.starts_with("睦说")
+            || msg.raw_message.starts_with("祥子说")
+            || msg.raw_message.starts_with("初华说")
+            || msg.raw_message.starts_with("喵梦说")
+            || msg.raw_message.starts_with("海铃说")
+            || msg.raw_message.starts_with("鲸说")
         {
-            true
-        } else {
-            false
+            return true;
         }
+        false
     }
-
+    #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
-        let mut splits = msg.raw_message.split(" ");
-        let name = splits.next().unwrap();
+        let mut name = "";
         let mut file_name: &str = "";
         let mut text_location = "mid";
-        if name == "睦说" {
+        if msg.raw_message.starts_with("睦说") {
+            name = "睦说";
             file_name = "mutsumi";
-        } else if name == "祥子说" {
+        } else if msg.raw_message.starts_with("祥子说") {
+            name = "祥子说";
             file_name = "saki";
-        } else if name == "初华说" {
+        } else if msg.raw_message.starts_with("初华说") {
+            name = "初华说";
             file_name = "uika";
-        } else if name == "喵梦说" {
+        } else if msg.raw_message.starts_with("喵梦说") {
+            name = "喵梦说";
             file_name = "nyamu";
-        } else if name == "海铃说" {
+        } else if msg.raw_message.starts_with("海铃说") {
+            name = "海铃说";
             file_name = "umiru";
-        } else if name == "鲸说" {
+        } else if msg.raw_message.starts_with("鲸说") {
+            name = "鲸说";
             file_name = "DS";
             text_location = "left";
         }
-
-        let text = msg
+        let text: &str = msg
             .raw_message
-            .strip_prefix(format!("{} ", name).as_str())
+            .strip_prefix(format!("{}", name).as_str())
             .unwrap();
+        let mut text = text.strip_prefix(" ").unwrap_or(text);
+        if text.is_empty() {
+            text = "请输入文本"
+        }
         let pic_start_time = std::time::Instant::now();
         let mut img =
             ImageReader::open(format!("{}/pic/{}.png", PATH.as_str(), file_name))?.decode()?;
         let ori_y = img.height() as f32;
-        let y = (ori_y * 0.15333) as i32;
-        let size = ori_y / 6.2;
+        let y = (ori_y * 0.16133) as i32;
+        let size = ori_y / 6.9;
         let i: f32 = text
             .chars()
             .map(|c| {
@@ -144,7 +157,7 @@ impl FnHandler for EmoMjk {
         false
     }
 
-    async fn help(&self) -> String {
+    async fn help(&self, _: &str) -> String {
         "生成表情包，格式为<角色说><空格><文字内容>\n角色支持:\n睦/祥子/初华/喵梦/海铃/鲸(DS娘)\neg:\n睦说 好女孩".to_string()
     }
 
