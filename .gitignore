@@ -1,1 +1,7 @@
 /target
+/.env
+/.idea/dataSources.xml
+/func_config.yaml
+/HarunaBot2.exe
+/main_config.yaml
+/.idea/inspectionProfiles/Project_Default.xml
