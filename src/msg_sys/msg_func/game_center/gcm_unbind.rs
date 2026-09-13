@@ -62,6 +62,7 @@ impl FnHandler for GCMUnbind {
                 return Err(anyhow!("该机厅为当前群聊创建，非绑定机厅，如需删除请使用“删除机厅”"))
             }
             sqlx::query!("delete from gc_name where gc_id = $1 and gid = $2",res[0].gc_id,msg.group_id).execute(&mut *tx).await?;
+            tx.commit().await?;
             let mut rep = SendMsg::new().await;
             rep.join_reply(msg.message_id).await;
             rep.join_text(format!("成功解除机厅绑定\nid:{}\nname:{}\n备注:{}",res[0].gc_id,res[0].name.clone().unwrap(),res[0].description)).await;
