@@ -1,12 +1,17 @@
 use crate::MAIN_CONFIG;
 use crate::msg_sys::func_config::func_config_get;
+use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::func_mod::ttf::TTF;
-use crate::msg_sys::msg_func::game_center::GameCenterManager;
-use crate::msg_sys::msg_func::game_center::gcm_add::GCMAdd;
-use crate::msg_sys::msg_func::game_center::gcm_delete::GCMDelete;
+use crate::msg_sys::msg_func::gc_query_report::GCQR;
+use crate::msg_sys::msg_func::gc_query_report::gcqr_query::GcqrQuery;
 use crate::msg_sys::msg_func::emoji_photo::MemPhoto;
 use crate::msg_sys::msg_func::emoji_say::{EmjSay, EmoMjk};
+use crate::msg_sys::msg_func::game_center::GameCenterManager;
+use crate::msg_sys::msg_func::game_center::gcm_add::GCMAdd;
+use crate::msg_sys::msg_func::game_center::gcm_add_name::GCMAddName;
+use crate::msg_sys::msg_func::game_center::gcm_delete::GCMDelete;
+use crate::msg_sys::msg_func::game_center::gcm_rename::GCMRename;
 use crate::msg_sys::msg_func::help::Help;
 use crate::msg_sys::msg_func::play::Play;
 use crate::msg_sys::msg_func::plusone::PlusOne;
@@ -15,19 +20,25 @@ use crate::msg_sys::msg_func::ttt::TTT;
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::notice_func::poke::Poke;
 use ab_glyph::FontVec;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tracing::log::warn;
 use tracing::{debug, error, info};
-use crate::msg_sys::msg_func::game_center::gcm_add_name::GCMAddName;
-use crate::msg_sys::msg_func::game_center::gcm_rename::GCMRename;
+use crate::msg_sys::msg_func::game_center::gcm_bind::GCMBind;
+use crate::msg_sys::msg_func::game_center::gcm_delete_name::GCMDeleteName;
+use crate::msg_sys::msg_func::game_center::gcm_search::GCMSearch;
+use crate::msg_sys::msg_func::game_center::gcm_unbind::GCMUnbind;
+use crate::msg_sys::msg_func::gc_query_report::gcqr_repo_plus::GcqrPlus;
+use crate::msg_sys::msg_func::gc_query_report::gcqr_report_minus::GcqrMinus;
+use crate::msg_sys::msg_func::gc_query_report::gcqr_report_set::GcqrSet;
 
 enum Handler {
     MsgFn(Vec<Box<dyn FnHandler + Send + Sync>>),
@@ -162,7 +173,11 @@ async fn msg_dispatch(msg: Msg) {
     debug!("finding msg handler");
     //取出handler
     for handler in MSG_HANDLERS.get().unwrap().iter() {
-        debug!("match {} handler", handler.name().await);
+        debug!(
+            "match {} handler status {}",
+            handler.name().await,
+            handler.status().await
+        );
         //使用handler的match方法进行判断消息是否符合
         if !handler.status().await || !handler.matches(&msg).await {
             continue;
@@ -205,7 +220,7 @@ async fn notice_dispatch(msg: Msg) {
 
 //模块注册函数
 fn mod_handler_regin() -> Vec<&'static (dyn ModHandler + Send + Sync)> {
-    let handlers: Vec<&'static (dyn ModHandler + Send + Sync)> = vec![&*TTF, &*DBLINK];
+    let handlers: Vec<&'static (dyn ModHandler + Send + Sync)> = vec![&*TTF, &*DBLINK, &*GCNAME];
     handlers
 }
 
@@ -245,7 +260,34 @@ fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
                 Box::new(GCMRename {
                     status: AtomicBool::from(false),
                 }),
-                Box::new(GCMAddName{status: AtomicBool::from(false)}),
+                Box::new(GCMAddName {
+                    status: AtomicBool::from(false),
+                }),
+                Box::new(GCMBind {
+                    status: AtomicBool::from(false),
+                }),
+                Box::new(GCMUnbind {
+                    status: AtomicBool::from(false),
+                }),
+                Box::new(GCMDeleteName {
+                    status: AtomicBool::from(false),
+                }),
+                Box::new(GCMSearch {
+                    status: AtomicBool::from(false),
+                }),
+            ],
+        }),
+        Box::new(GCQR {
+            status: AtomicBool::from(false),
+            sub_function: vec![Box::new(GcqrQuery {
+                status: AtomicBool::from(false),
+            }),Box::new(GcqrSet {
+                status: AtomicBool::from(false),
+            }),Box::new(GcqrPlus {
+                status: AtomicBool::from(false),
+            }),Box::new(GcqrMinus {
+                status: AtomicBool::from(false),
+            })
             ],
         }),
         Box::new(PlusOne {
@@ -340,7 +382,7 @@ async fn bw_right(msg: &Msg) -> bool {
 }
 //打印接收消息
 fn log_msg(msg: &Msg) {
-    if msg.message_type == "group" && msg.sender.user_id!=msg.self_id {
+    if msg.message_type == "group" && msg.sender.user_id != msg.self_id {
         info!(
             "[{}]({}):[{}]({}) => <{}>",
             msg.group_name, msg.group_id, msg.sender.nickname, msg.sender.user_id, msg.raw_message
@@ -378,4 +420,63 @@ pub async fn sub_init(handlers: &Vec<Box<dyn FnHandler + Send + Sync>>) {
         handler.init().await;
         log_init(handler.name().await, handler.status().await).await;
     }
+}
+
+pub async fn mod_status_examine(mut rx: tokio::sync::watch::Receiver<bool>) -> bool {
+    if *rx.borrow_and_update() {
+        true
+    } else {
+        loop {
+            let _ = rx.changed().await;
+            if *rx.borrow_and_update() {
+                return true;
+            } else {
+                continue;
+            }
+        }
+    }
+}
+
+pub async fn sub_help(helps:&str, handlers: &Vec<Box<dyn FnHandler + Send + Sync>>) -> String {
+    let mut helps_splits = helps.split("-");
+    helps_splits.next();
+    let mut help_data = String::new();
+    let mut unfind_help_data = String::new();
+    'a: for help in helps_splits {
+        for subfunction in handlers {
+            let name = subfunction.name().await;
+            if (subfunction.status().await && name == help) || helps.contains("all") {
+                let data = subfunction.help(help).await;
+                help_data.push_str(format!("<{}>\n{}\n", name, data.as_str()).as_str());
+                if !helps.contains("all") {
+                    continue 'a;
+                } else {
+                    continue;
+                }
+            }
+        }
+        if helps.contains("all") {
+            continue 'a;
+        }
+        unfind_help_data.push_str(format!("<{}>", help).as_str());
+    }
+
+    if !help_data.is_empty() {
+        let res = help_data.strip_suffix("\n").unwrap().to_string();
+        return res;
+    }
+    help_data.push_str(">");
+    let mut sub_help_data = String::new();
+    for handler in handlers {
+        let name = handler.name().await;
+        if name != "help".to_string() && handler.status().await {
+            sub_help_data.push_str(format!("\n{}", name).as_str());
+        }
+    }
+    if sub_help_data.is_empty() {
+        sub_help_data.push_str("\n...");
+    }
+    help_data.push_str(sub_help_data.as_str());
+    help_data.push_str("\n>\n\n使用\n/help <主功能>-<子功能>...\n来查询子功能详细用法\neg:\n/help 机厅管理-添加-删除");
+    help_data
 }

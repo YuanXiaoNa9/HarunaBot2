@@ -1,12 +1,13 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use crate::msg_sys::func_mod::gc_name::GCNAME;
 
 pub struct GCMRename {
     pub(crate) status: AtomicBool,
@@ -14,38 +15,40 @@ pub struct GCMRename {
 #[async_trait]
 impl FnHandler for GCMRename {
     async fn matches(&self, msg: &Msg) -> bool {
-        sub_matches(msg,self.name().await)
+        sub_matches(msg, self.name().await)
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         useable_judgment(msg).await?;
-        let splits :Vec<&str>;
-        let gc_name:&str;
-        let mut id:i64 = 0;
-        let new_name:&str;
+        let vec_msg: Vec<&str>;
+        let gc_name: &str;
+        let mut id: i64 = 0;
+        let new_name: &str;
         if msg.raw_message.split(" ").count() == 4 {
-            splits = msg.raw_message.split(" ").collect::<Vec<&str>>();
-            gc_name = splits[2];
-            new_name = splits[3];
-        }else if msg.raw_message.split(" ").count() == 5 {
-            splits = msg.raw_message.split(" ").collect::<Vec<&str>>();
-            gc_name = splits[3];
-            new_name = splits[4];
-            let ok = splits[2];
+            vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
+            gc_name = vec_msg[2];
+            new_name = vec_msg[3];
+        } else if msg.raw_message.split(" ").count() == 5 {
+            vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
+            gc_name = vec_msg[3];
+            new_name = vec_msg[4];
+            let ok = vec_msg[2];
             if ok.parse::<i64>().is_ok() {
                 id = ok.parse::<i64>()?;
             }
-        }else {
-            return Err(anyhow!("参数错误\n使用方法:\n/机厅管理 重命名 <机厅id(可选)> <origin_name> <new_name>"))
+        } else {
+            return Err(anyhow!(
+                "参数错误\n使用方法:\n/机厅管理 重命名 <机厅id(可选)> <origin_name> <new_name>"
+            ));
         }
-        struct Data{
-            gc_id:i64,
+        struct Data {
+            gc_id: i64,
         }
-        struct DataNames{
-            name:Option<String>,
-            description:String,
-            gc_id:i64,
-            admin_gid:i64,
+        struct DataNames {
+            name: Option<String>,
+            description: String,
+            gc_id: i64,
+            admin_gid: i64,
         }
         let mut tx = DBLINK.db_link.get().unwrap().begin().await?;
 
@@ -53,21 +56,54 @@ impl FnHandler for GCMRename {
         let data_counts = res.len();
         if data_counts == 0 {
             return Err(anyhow!("未找到符合条件的机厅"));
-        } else if data_counts > 1{
-            let mut query_list:String = String::new();
+        } else if data_counts > 1 {
+            let mut query_list: String = String::new();
             query_list.push_str("查找到多个相同名称：\n");
             for data in res {
-                query_list.push_str(format!("\nid: {}\nname: {}\n备注: {}",&data.gc_id,&data.name.unwrap(),&data.description).as_str());
+                query_list.push_str(
+                    format!(
+                        "\nid: {}\nname: {}\n备注: {}",
+                        &data.gc_id,
+                        &data.name.unwrap(),
+                        &data.description
+                    )
+                    .as_str(),
+                );
             }
-            return Err(anyhow!("{}\n\n请使用机厅id进行",query_list))
+            return Err(anyhow!("{}\n\n请使用机厅id进行", query_list));
         } else {
-            let _ = sqlx::query!("update gc_name set name = $1 where name = $2 and gid = $3 and gc_id = $4",new_name,gc_name,msg.group_id,res[0].gc_id).execute(&mut *tx).await?;
+            struct NameData {
+                name: String,
+            }
+            let res1 = sqlx::query_as!(
+                NameData,
+                "select name from gc_name where name = $1",
+                new_name
+            )
+            .fetch_all(&mut *tx)
+            .await?;
+            if res1.len() != 0 {
+                return Err(anyhow!("与现有机厅重名，请更换名字"));
+            }
+            let _ = sqlx::query!(
+                "update gc_name set name = $1 where name = $2 and gid = $3 and gc_id = $4",
+                new_name,
+                gc_name,
+                msg.group_id,
+                res[0].gc_id
+            )
+            .execute(&mut *tx)
+            .await?;
             tx.commit().await?;
-            let mut rep =SendMsg::new().await;
-            rep.join_text(format!("成功修改机厅名字\nid:{}\nold_name:{}\nnew_name:{}",res[0].gc_id,gc_name,new_name)).await;
+            let mut rep = SendMsg::new().await;
+            rep.join_text(format!(
+                "成功修改机厅名字\nid:{}\nold_name:{}\nnew_name:{}",
+                res[0].gc_id, gc_name, new_name
+            ))
+            .await;
             rep.send_forward_msg(msg).await;
         }
-
+        GCNAME.init().await;
         Ok(())
     }
 

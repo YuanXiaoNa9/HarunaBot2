@@ -81,9 +81,7 @@ impl SendMsg {
     pub async fn join_reply(&mut self, message_id: i64) {
         self.message.push(Message {
             r#type: "reply".to_string(),
-            data: Reply(DataReply {
-                id : message_id,
-            }),
+            data: Reply(DataReply { id: message_id }),
         });
     }
     pub async fn join_record(&mut self, file_path: String) {
@@ -224,9 +222,7 @@ impl DataNode {
     pub async fn join_reply(&mut self, message_id: i64) {
         self.content.push(Message {
             r#type: "reply".to_string(),
-            data: Reply(DataReply {
-                id: message_id,
-            }),
+            data: Reply(DataReply { id: message_id }),
         });
     }
     pub async fn join_record(&mut self, file_path: String) {
@@ -270,7 +266,7 @@ struct DataFace {
     id: i32,
 }
 #[derive(Serialize, Deserialize, Debug)]
-struct DataReply{
+struct DataReply {
     id: i64,
 }
 #[derive(Serialize, Deserialize, Debug)]

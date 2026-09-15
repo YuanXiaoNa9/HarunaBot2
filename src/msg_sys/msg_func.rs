@@ -1,6 +1,7 @@
-pub mod game_center;
+pub mod gc_query_report;
 pub mod emoji_photo;
 pub mod emoji_say;
+pub mod game_center;
 pub mod help;
 pub mod play;
 pub mod plusone;

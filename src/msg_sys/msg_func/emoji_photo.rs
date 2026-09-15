@@ -2,6 +2,7 @@ use crate::msg_sys::msg_reply::{SendMsg, http_ip_process};
 use crate::msg_sys::msg_sys::{FnHandler, Msg, Subroutine};
 use crate::{HTTP_CLIENT, MAIN_CONFIG, PATH};
 use anyhow::{Error, anyhow};
+use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use base64::Engine;
 use image::ImageFormat::Png;
@@ -13,7 +14,6 @@ use std::io::Cursor;
 use std::str::Bytes;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use anyhow_trace::anyhow_trace;
 use tracing::error;
 use tracing::log::debug;
 
@@ -89,7 +89,6 @@ impl FnHandler for MemPhoto {
     }
 
     async fn help(&self, _: &str) -> String {
-
         "生成遗照表情包，使用方法：\n永远怀念<图片>".to_string()
     }
 

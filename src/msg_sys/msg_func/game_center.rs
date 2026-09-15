@@ -1,19 +1,18 @@
 pub mod gcm_add;
-pub mod gcm_delete;
-pub mod gcm_rename;
-pub mod gcm_bind;
 pub mod gcm_add_name;
+pub mod gcm_bind;
+pub mod gcm_delete;
 pub mod gcm_delete_name;
-pub mod gcm_unbind;
+pub mod gcm_rename;
 pub mod gcm_search;
+pub mod gcm_unbind;
 
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_sys::{FnHandler, Msg, sub_init, sub_match_process};
+use crate::msg_sys::msg_sys::{FnHandler, Msg, mod_status_examine, sub_help, sub_init, sub_match_process};
 use anyhow::{Error, anyhow};
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering::Relaxed;
 
 pub struct GameCenterManager {
     pub enable: bool,
@@ -35,20 +34,8 @@ impl FnHandler for GameCenterManager {
     }
 
     async fn init(&self) {
-        let mut rx = DBLINK.rx.clone();
-        if *rx.borrow_and_update() {
-            self.status.store(true, Relaxed);
-        } else {
-            loop {
-                let _ = rx.changed().await;
-                if *rx.borrow_and_update() {
-                    self.status.store(true, Relaxed);
-                    break;
-                } else {
-                    continue;
-                }
-            }
-        }
+        let rx = DBLINK.rx.clone();
+        mod_status_examine(rx).await;
         pg_init().await;
         sub_init(&self.subfunction).await;
     }
@@ -61,47 +48,7 @@ impl FnHandler for GameCenterManager {
     }
 
     async fn help(&self, helps: &str) -> String {
-        let mut helps_splits = helps.split("-");
-        helps_splits.next();
-        let mut help_data = String::new();
-        let mut unfind_help_data = String::new();
-        'a: for help in helps_splits {
-            for subfunction in &self.subfunction {
-                let name = subfunction.name().await;
-                if (subfunction.status().await && name == help) || helps.contains("all") {
-                    let data = subfunction.help(help).await;
-                    help_data.push_str(format!("<{}>\n{}\n", name, data.as_str()).as_str());
-                    if !helps.contains("all") {
-                        continue 'a;
-                    }else {
-                        continue;
-                    }
-                }
-            }
-            if helps.contains("all") {
-                continue 'a;
-            }
-            unfind_help_data.push_str(format!("<{}>", help).as_str());
-        }
-
-        if !help_data.is_empty() {
-            let res = help_data.strip_suffix("\n").unwrap().to_string();
-            return res;
-        }
-        help_data.push_str(">");
-        let mut sub_help_data = String::new();
-        for handler in &self.subfunction {
-            let name = handler.name().await;
-            if name != "help".to_string() && handler.status().await {
-                sub_help_data.push_str(format!("\n{}", name).as_str());
-            }
-        }
-        if sub_help_data.is_empty() {
-            sub_help_data.push_str("\n...");
-        }
-        help_data.push_str(sub_help_data.as_str());
-        help_data.push_str("\n>\n\n使用\n/help <主功能>-<子功能>...\n来查询子功能详细用法\neg:\n/help 机厅管理-添加-删除");
-        help_data
+        sub_help(helps, &self.subfunction).await
     }
 
     async fn name(&self) -> String {
@@ -123,9 +70,10 @@ async fn pg_init() {
     GC_id bigint primary key generated always as identity,
     admin_gid bigint not null,
     headcount int not null default 0,
-    last_time bigint not null default 0,
+    report_time bigint not null default 0,
     refresh boolean default true,
-    description text not null
+    description text not null default '该机厅未备注',
+    report_id bigint not null default 0
 )"
     )
     .execute(&mut *link)
@@ -144,7 +92,7 @@ async fn pg_init() {
     link.commit().await.unwrap();
 }
 #[anyhow_trace]
-pub async fn useable_judgment(msg: &Msg) -> Result<(),Error> {
+pub async fn useable_judgment(msg: &Msg) -> Result<(), Error> {
     if msg.message_type != "group" {
         return Err(anyhow!("请在群聊内使用"));
     }
@@ -153,7 +101,7 @@ pub async fn useable_judgment(msg: &Msg) -> Result<(),Error> {
     }
     Ok(())
 }
-pub (self) fn sub_matches(msg: &Msg,name: String) -> bool {
+pub(self) fn sub_matches(msg: &Msg, name: String) -> bool {
     let mut splits = msg.raw_message.split(" ");
     splits.next();
     let a = splits.next();
