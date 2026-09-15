@@ -1,6 +1,7 @@
 use crate::msg_sys::msg_reply::{SendMsg, http_ip_process};
-use crate::msg_sys::msg_sys::{FnHandler, Msg, Subroutine};
-use crate::{HTTP_CLIENT, MAIN_CONFIG, PATH};
+use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use crate::qq_link::{HTTP_CLIENT, http_get};
+use crate::{MAIN_CONFIG, PATH};
 use anyhow::{Error, anyhow};
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
@@ -11,10 +12,8 @@ use image::{DynamicImage, ImageReader};
 use imageproc::drawing::Canvas;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use std::str::Bytes;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use tracing::error;
+use std::sync::atomic::Ordering::Relaxed;
 use tracing::log::debug;
 
 pub struct MemPhoto {
@@ -23,8 +22,9 @@ pub struct MemPhoto {
 #[async_trait]
 impl FnHandler for MemPhoto {
     async fn matches(&self, msg: &Msg) -> bool {
-        if msg.raw_message.starts_with("永远怀念[CQ:image,")
-            || msg.raw_message.starts_with("永远怀念\n[CQ:image,")
+        if msg.raw_message.starts_with("怀念[CQ:image,")
+            || msg.raw_message.starts_with("怀念\n[CQ:image,")
+            || (msg.raw_message.starts_with("[CQ:reply,id=") && msg.raw_message.ends_with("]怀念"))
         {
             return true;
         }
@@ -44,7 +44,7 @@ impl FnHandler for MemPhoto {
         let img = ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()?
             .decode();
-        let mut img = img?;
+        let img = img?;
         let proportion: f32;
         let (ori_x, ori_y) = img.dimensions();
         if ori_x > ori_y {
@@ -82,14 +82,16 @@ impl FnHandler for MemPhoto {
         Ok(())
     }
 
-    async fn init(&self) {}
+    async fn init(&self) {
+        self.status.store(true, Relaxed);
+    }
 
     async fn status(&self) -> bool {
-        true
+        self.status.load(Relaxed)
     }
 
     async fn help(&self, _: &str) -> String {
-        "生成遗照表情包，使用方法：\n永远怀念<图片>".to_string()
+        "生成遗照表情包，使用方法：\n怀念<图片>\n[回复图片]怀念".to_string()
     }
 
     async fn name(&self) -> String {
@@ -106,6 +108,10 @@ async fn get_img_id(msg: &Msg) -> Option<String> {
     struct Body {
         file: String,
     }
+    #[derive(Serialize, Deserialize, Debug)]
+    struct BodyGetMsg {
+        message_id: String,
+    }
     #[derive(Deserialize, Debug)]
     struct ImageData {
         status: String,
@@ -120,20 +126,67 @@ async fn get_img_id(msg: &Msg) -> Option<String> {
         file: String,
         url: String,
     }
-
-    let start = msg.raw_message.find(",file=").unwrap() + 6;
-    let end = msg.raw_message.find(",sub_type=").unwrap();
-    let id = msg.raw_message[start..end].to_string();
+    #[derive(Serialize, Deserialize, Debug)]
+    struct MessageData {
+        status: String,
+        retcode: i16,
+        data: MsgData,
+        message: String,
+        wording: String,
+        stream: String,
+    }
+    #[derive(Serialize, Deserialize, Debug)]
+    struct MsgData {
+        self_id: i64,
+        user_id: i64,
+        time: i64,
+        message_id: i64,
+        message_seq: i64,
+        real_id: i64,
+        real_seq: String,
+        message_type: String,
+        sender: Sender,
+        raw_message: String,
+        font: i16,
+        sub_type: String,
+        post_type: String,
+        group_id: i64,
+        group_name: String,
+    }
+    #[derive(Serialize, Deserialize, Debug)]
+    struct Sender {
+        user_id: i64,
+        nickname: String,
+        card: String,
+        role: String,
+    }
+    let start: usize;
+    let end: usize;
+    let id: String;
+    if msg.raw_message.starts_with("[CQ:reply,id=") {
+        let start1 = msg.raw_message.find("[CQ:reply,id=").unwrap() + 13;
+        let end1 = msg.raw_message.find("]怀念").unwrap();
+        let message_id = msg.raw_message[start1..end1].to_string();
+        let req = BodyGetMsg { message_id };
+        let rsp = http_get("/get_msg").json(&req).send().await.unwrap();
+        let str = rsp.text().await.unwrap();
+        debug!("{}", str);
+        let res: MessageData = serde_json::from_str(&str).unwrap();
+        let msg = res.data;
+        start = msg.raw_message.find(",file=").unwrap() + 6;
+        end = msg.raw_message.find(",sub_type=").unwrap();
+        id = msg.raw_message[start..end].to_string();
+    } else if msg.raw_message.starts_with("怀念") {
+        start = msg.raw_message.find(",file=").unwrap() + 6;
+        end = msg.raw_message.find(",sub_type=").unwrap();
+        id = msg.raw_message[start..end].to_string();
+    } else {
+        return None;
+    }
     let req = Body { file: id };
-    let url = format!("{}{}", http_ip_process(), "/get_image");
-
-    let rsp = HTTP_CLIENT
-        .post(&url)
+    let rsp = http_get("/get_image")
         .json(&req)
-        .header(
-            "Authorization",
-            format!("Bearer {}", MAIN_CONFIG.nc_setting.http_token),
-        )
+        .json(&req)
         .send()
         .await
         .unwrap();

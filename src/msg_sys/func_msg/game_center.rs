@@ -4,12 +4,14 @@ pub mod gcm_bind;
 pub mod gcm_delete;
 pub mod gcm_delete_name;
 pub mod gcm_rename;
+pub mod gcm_rewrite_description;
 pub mod gcm_search;
 pub mod gcm_unbind;
-pub mod gcm_rewrite_description;
 
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_sys::{FnHandler, Msg, mod_status_examine, sub_help, sub_init, sub_match_process};
+use crate::msg_sys::msg_sys::{
+    FnHandler, Msg, mod_status_examine, sub_help, sub_init, sub_match_process,
+};
 use anyhow::{Error, anyhow};
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;

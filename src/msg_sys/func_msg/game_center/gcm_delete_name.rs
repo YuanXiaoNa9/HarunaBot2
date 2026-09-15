@@ -1,14 +1,13 @@
+use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
-use sqlx::{Acquire, Row};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use crate::msg_sys::func_mod::gc_name::GCNAME;
 
 pub struct GCMDeleteName {
     pub(crate) status: AtomicBool,

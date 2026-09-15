@@ -1,11 +1,9 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{FnHandler, Msg, Subroutine};
+use crate::msg_sys::msg_sys::{FnHandler, Msg, mod_status_examine};
 use anyhow::Error;
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
-use futures_util::FutureExt;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use tracing::debug;
@@ -41,19 +39,8 @@ impl FnHandler for TTT {
 
     async fn init(&self) {
         let mut rx = DBLINK.rx.clone();
-        if *rx.borrow_and_update() {
-            self.status.store(true, Relaxed);
-        } else {
-            loop {
-                let _ = rx.changed().await;
-                if *rx.borrow_and_update() {
-                    self.status.store(true, Relaxed);
-                    break;
-                } else {
-                    continue;
-                }
-            }
-        }
+        mod_status_examine(rx).await;
+        self.status.store(true, Relaxed);
     }
 
     async fn status(&self) -> bool {

@@ -1,6 +1,9 @@
 pub mod func_config;
 pub mod func_mod;
-pub mod msg_func;
+pub mod func_msg;
+pub mod func_notice;
+pub mod handler_init;
+pub mod handler_regin;
+pub mod msg_analysis;
 pub mod msg_reply;
 pub mod msg_sys;
-pub mod notice_func;

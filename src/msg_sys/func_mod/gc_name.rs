@@ -3,7 +3,6 @@ use crate::msg_sys::msg_sys::{ModHandler, mod_status_examine};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use std::sync::atomic::AtomicBool;
 use tokio::sync::{RwLock, watch};
 use tracing::debug;
 
@@ -43,9 +42,13 @@ impl ModHandler for GcName {
         let mut map = GCNAME.map.write().await;
         map.clear();
         for data in vec_name {
-            debug!("found GC {} {}", format!("{}|{}", data.name, data.gid), data.gc_id);
+            debug!(
+                "found GC {} {}",
+                format!("{}|{}", data.name, data.gid),
+                data.gc_id
+            );
             map.insert(
-                format!("{}{}", data.name, data.gid),
+                format!("{}|{}", data.name, data.gid),
                 GcData { gc_id: data.gc_id },
             );
         }

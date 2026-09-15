@@ -1,13 +1,12 @@
-use std::fmt::format;
 use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::{Error, anyhow};
-use async_trait::async_trait;
-use chrono::{Local, TimeZone, Utc};
-use std::sync::atomic::AtomicBool;
 use anyhow_trace::anyhow_trace;
+use async_trait::async_trait;
+use chrono::{Local, TimeZone};
+use std::sync::atomic::AtomicBool;
 use tracing::debug;
 
 pub struct GcqrQuery {
@@ -33,8 +32,7 @@ impl FnHandler for GcqrQuery {
             return false;
         }
         let name_map = GCNAME.map.read().await;
-        debug!("ok22{}",!name_map.contains_key(&format!("{}{}", &gc_name, msg.group_id)));
-        if !name_map.contains_key(&format!("{}{}", &gc_name, msg.group_id)) {
+        if !name_map.contains_key(&format!("{}|{}", &gc_name, msg.group_id)) {
             debug!("not found");
             return false;
         }
@@ -54,7 +52,8 @@ impl FnHandler for GcqrQuery {
         let name_map = GCNAME.map.read().await;
         let gc_id = name_map
             .get(&format!("{}|{}", &gc_name, msg.group_id))
-            .unwrap().gc_id;
+            .unwrap()
+            .gc_id;
         struct Data {
             report_time: i64,
             refresh: Option<bool>,
@@ -78,7 +77,10 @@ impl FnHandler for GcqrQuery {
             let now_day = now_time.date_naive().and_hms_opt(0, 0, 0).unwrap();
             let data_time = Local.timestamp_opt(res[0].report_time, 0).unwrap();
             let data_day = data_time.date_naive().and_hms_opt(0, 0, 0).unwrap();
-            debug!("{} {} {} {} {} {}",res[0].report_time,now_secs,now_time,data_time,data_day,now_day);
+            debug!(
+                "{} {} {} {} {} {}",
+                res[0].report_time, now_secs, now_time, data_time, data_day, now_day
+            );
             if res[0].refresh.unwrap_or(true) && data_day != now_day {
                 let mut rep = SendMsg::new().await;
                 rep.join_reply(msg.message_id).await;
@@ -90,12 +92,13 @@ impl FnHandler for GcqrQuery {
             rep.join_reply(msg.message_id).await;
             rep.join_text(format!(
                 r#"机厅"{}"现在有 {} 人"#,
-                gc_name,
-                res[0].headcount,
+                gc_name, res[0].headcount,
             ))
+            .await;
+            rep.join_text(format!("\n上报时间: {}", data_time.format("%H:%M:%S")))
                 .await;
-            rep.join_text(format!("\n上报时间: {}", data_time.format("%H:%M:%S"))).await;
-            rep.join_text(format!("\n上报人: {}", res[0].report_id)).await;
+            rep.join_text(format!("\n上报人: {}", res[0].report_id))
+                .await;
             rep.send_msg(msg).await;
             Ok(())
         }

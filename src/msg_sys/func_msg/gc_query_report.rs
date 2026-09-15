@@ -1,10 +1,12 @@
 use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_sys::{mod_status_examine, sub_help, sub_init, sub_match_process, FnHandler, Msg};
+use crate::msg_sys::msg_sys::{
+    FnHandler, Msg, mod_status_examine, sub_help, sub_init, sub_match_process,
+};
 use anyhow::Error;
+use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
-use anyhow_trace::anyhow_trace;
 use tracing::debug;
 
 pub mod gcqr_query;
@@ -19,18 +21,23 @@ pub struct GCQR {
 #[async_trait]
 impl FnHandler for GCQR {
     async fn matches(&self, msg: &Msg) -> bool {
-        if msg.raw_message.len() > 30{
+        if msg.raw_message.len() > 30 {
             return false;
         }
-        let gc_name =msg.raw_message.clone();
-        let gc_name = gc_name.strip_suffix(&['j','几']).unwrap_or(&*gc_name);
+        let gc_name = msg.raw_message.clone();
+        let gc_name = gc_name.strip_suffix(&['j', '几']).unwrap_or(&*gc_name);
         let gc_name = gc_name.strip_suffix("几人").unwrap_or(gc_name);
         let gc_name = gc_name.strip_suffix("几个人").unwrap_or(gc_name);
-        let gc_name = gc_name.trim_end_matches(|c: char| { c.is_ascii_digit() || ['+', '-'].contains(&c) });
-        let gc_name = gc_name.strip_suffix(&['加','减']).unwrap_or(gc_name);
-        GCNAME.map.read().await.contains_key(format!("{}|{}", gc_name, msg.group_id).as_str())
+        let gc_name =
+            gc_name.trim_end_matches(|c: char| c.is_ascii_digit() || ['+', '-'].contains(&c));
+        let gc_name = gc_name.strip_suffix(&['加', '减']).unwrap_or(gc_name);
+        GCNAME
+            .map
+            .read()
+            .await
+            .contains_key(format!("{}|{}", gc_name, msg.group_id).as_str())
     }
-#[anyhow_trace]
+    #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         sub_match_process(msg, &self.sub_function).await?;
         Ok(())
@@ -53,7 +60,7 @@ impl FnHandler for GCQR {
     }
 
     async fn help(&self, helps: &str) -> String {
-        sub_help(helps,&self.sub_function).await
+        sub_help(helps, &self.sub_function).await
     }
 
     async fn name(&self) -> String {

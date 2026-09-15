@@ -1,12 +1,9 @@
-use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::func_mod::ttf::TTF;
-use crate::msg_sys::msg_reply::Data::{Face, File, Image, Node, Record, Reply, Text, Video};
+use crate::MAIN_CONFIG;
+use crate::msg_sys::msg_analysis::{Msg, MsgSender};
+use crate::msg_sys::msg_reply::Data::{Face, Image, Node, Record, Reply, Text, Video};
 use crate::msg_sys::msg_reply::PostType::Poke;
-use crate::msg_sys::msg_sys::{ModData, Msg, MsgSender};
-use crate::qq_link::SEND_CHAN;
-use crate::{HTTP_CLIENT, MAIN_CONFIG};
+use crate::qq_link::{SEND_CHAN, http_get};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tracing::{debug, error, info};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -21,12 +18,13 @@ pub struct SendMsg {
     pub message_type: String,
     pub group_id: i64,
     pub user_id: i64,
-    message: Vec<Message>,
+    message: String,
 }
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 enum Data {
     Text(DataText),
+    At(DataAt),
     Image(DataImage),
     Face(DataFace),
     Reply(DataReply),
@@ -44,72 +42,47 @@ impl SendMsg {
             message_type: "".to_string(),
             group_id: 0,
             user_id: 0,
-            message: Vec::new(),
+            message: String::new(),
         }
     }
     //添加文字消息
     pub async fn join_text(&mut self, s: String) {
         //接收字符串作为文字消息存入待发送数据中
-        self.message.push(Message {
-            r#type: "text".to_string(),
-            data: Data::Text(DataText { text: s }),
-        });
-        debug!("join_text ok");
+        self.message.push_str(&s);
     }
     pub async fn join_at(&mut self, at_id: i64) {
-        self.message.push(Message {
-            r#type: "text".to_string(),
-            data: Data::Text(DataText {
-                text: format!("[CQ:at,qq={}", at_id),
-            }),
-        })
+        self.message
+            .push_str(format!("[CQ:at,qq={}] ", at_id).as_str());
     }
     //添加图片消息
     pub async fn join_image(&mut self, pic_path: String) {
         //接收图片路径作为图片消息存入待发送数据中
-        self.message.push(Message {
-            r#type: "image".to_string(),
-            data: Image(DataImage { file: pic_path }),
-        });
+        self.message
+            .push_str(format!("[CQ:image,file={}]", pic_path).as_str());
     }
     pub async fn join_face(&mut self, face_id: i32) {
-        self.message.push(Message {
-            r#type: "face".to_string(),
-            data: Face(DataFace { id: face_id }),
-        });
+        self.message
+            .push_str(format!("[CQ:face,id={}]", face_id).as_str());
     }
     pub async fn join_reply(&mut self, message_id: i64) {
-        self.message.push(Message {
-            r#type: "reply".to_string(),
-            data: Reply(DataReply { id: message_id }),
-        });
+        self.message
+            .push_str(format!("[CQ:reply,id={}]", message_id).as_str());
     }
     pub async fn join_record(&mut self, file_path: String) {
-        self.message.push(Message {
-            r#type: "record".to_string(),
-            data: Record(DataRecord { file: file_path }),
-        })
+        self.message
+            .push_str(format!("[CQ:record,file={}]", file_path).as_str());
     }
     pub async fn join_video(&mut self, file_path: String) {
-        self.message.push(Message {
-            r#type: "video".to_string(),
-            data: Video(DataVideo { file: file_path }),
-        })
+        self.message
+            .push_str(format!("[CQ:video,file={}]", file_path).as_str());
     }
-    pub async fn join_file(&mut self, file_path: String, file_name: String) {
-        self.message.push(Message {
-            r#type: "".to_string(),
-            data: File(DataFile {
-                file: file_path.to_string(),
-                name: file_name.to_string(),
-            }),
-        })
+    pub async fn join_file(&mut self, file_path: String) {
+        self.message
+            .push_str(format!("[CQ:file,file={}]", file_path).as_str());
     }
     pub async fn join_node(&mut self, node: DataNode) {
-        self.message.push(Message {
-            r#type: "node".to_string(),
-            data: Node(node),
-        })
+        let node = serde_json::to_string(&node).unwrap();
+        self.message.push_str(node.as_str());
     }
     //调用该方法时，传入原始消息作为基本数据，并将自身存储的消息数据发送，
     pub async fn send_msg(mut self, msg: &Msg) {
@@ -123,14 +96,6 @@ impl SendMsg {
             self.message_type = "group".to_string();
         }
         if self.message_type == "group" {
-            let mut bot_msg = String::new();
-            bot_msg.push_str("[bot_msg]");
-            for i in &self.message {
-                match &i.data {
-                    Text(data) => bot_msg.push_str(data.text.as_str()),
-                    _ => {}
-                }
-            }
             let msg = Msg {
                 time: 0,
                 self_id: msg.self_id,
@@ -144,7 +109,7 @@ impl SendMsg {
                 group_name: "bot".to_string(),
                 user_id: msg.self_id,
                 message: "".to_string(),
-                raw_message: bot_msg,
+                raw_message: format!("[bot_msg]{}", self.message),
                 font: 0,
                 sender: MsgSender {
                     user_id: msg.self_id,
@@ -154,6 +119,7 @@ impl SendMsg {
                     sex: "".to_string(),
                     age: 0,
                 },
+                notice_type: "".to_string(),
             };
             SEND_CHAN
                 .get()
@@ -163,7 +129,7 @@ impl SendMsg {
                 .unwrap();
         }
         debug!("try send msg");
-        send(&PostType::Message(self), "send_msg".to_string()).await;
+        send(&PostType::Message(self), "/send_msg".to_string()).await;
     }
     pub async fn send_forward_msg(mut self, msg: &Msg) {
         if self.user_id == 0 && self.group_id == 0 {
@@ -177,7 +143,7 @@ impl SendMsg {
         }
 
         debug!("try send msg");
-        send(&PostType::Message(self), "send_forward_msg".to_string()).await;
+        send(&PostType::Message(self), "/send_forward_msg".to_string()).await;
     }
 }
 impl DataNode {
@@ -254,6 +220,10 @@ pub struct Message {
     data: Data,
 }
 #[derive(Serialize, Deserialize, Debug)]
+struct DataAt {
+    qq: i64,
+}
+#[derive(Serialize, Deserialize, Debug)]
 struct DataText {
     text: String,
 }
@@ -302,29 +272,20 @@ impl SendPoke {
             user_id: uid,
             group_id: None,
         };
-        send(&Poke(data), "friend_poke".to_string()).await;
+        send(&Poke(data), "/friend_poke".to_string()).await;
     }
     pub async fn group(gid: i64, uid: i64) {
         let data = SendPoke {
             user_id: uid,
             group_id: Some(gid),
         };
-        send(&Poke(data), "group_poke".to_string()).await;
+        send(&Poke(data), "/group_poke".to_string()).await;
     }
 }
 
 async fn send(data: &PostType, post_type: String) {
     let ip_port = http_ip_process();
-    match HTTP_CLIENT
-        .post(format!("{}/{}", ip_port, post_type))
-        .json(&data)
-        .header(
-            "Authorization",
-            format!("Bearer {}", MAIN_CONFIG.nc_setting.http_token),
-        )
-        .send()
-        .await
-    {
+    match http_get(&*post_type).json(&data).send().await {
         Ok(i) => {
             info!("消息发送成功 server return:{:?}", i);
             debug!("send msg:{}", serde_json::to_string(&data).unwrap());

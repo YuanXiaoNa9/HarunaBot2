@@ -1,11 +1,9 @@
 use crate::msg_sys::msg_reply::SendPoke;
-use crate::msg_sys::msg_sys::{FnHandler, Msg, Subroutine};
+use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::Error;
 use async_trait::async_trait;
-use std::ops::Sub;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use tracing::log::debug;
 
 pub struct Poke {
     pub status: AtomicBool,
@@ -13,8 +11,6 @@ pub struct Poke {
 #[async_trait]
 impl FnHandler for Poke {
     async fn matches(&self, msg: &Msg) -> bool {
-        debug!("matches poke mod");
-        debug!("{}", msg.sub_type);
         if msg.sub_type == "poke" && msg.target_id == msg.self_id {
             return true;
         }

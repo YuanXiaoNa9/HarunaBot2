@@ -2,11 +2,9 @@ use crate::msg_sys::msg_sys::ModHandler;
 use ab_glyph::FontVec;
 use async_trait::async_trait;
 use std::sync::LazyLock;
-use tokio::spawn;
 use tokio::sync::{OnceCell, watch};
 use tokio::time::sleep;
-use tracing::log::warn;
-use tracing::{error, info};
+use tracing::error;
 
 pub static TTF: LazyLock<TtfData> = LazyLock::new(ttf_init);
 fn ttf_init() -> TtfData {

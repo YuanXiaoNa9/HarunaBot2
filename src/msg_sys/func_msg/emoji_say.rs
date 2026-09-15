@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg, mod_status_examine};
 use crate::{MAIN_CONFIG, PATH};
 use ab_glyph::{Font, PxScale, ScaleFont};
 use anyhow::Error;
@@ -136,19 +136,8 @@ impl FnHandler for EmoMjk {
             return;
         }
         let mut rx = TTF.rx.clone();
-        if *rx.borrow_and_update() {
-            self.status.store(true, Relaxed);
-        } else {
-            loop {
-                let _ = rx.changed().await;
-                if *rx.borrow_and_update() {
-                    self.status.store(true, Relaxed);
-                    break;
-                } else {
-                    continue;
-                }
-            }
-        }
+        mod_status_examine(rx).await;
+        self.status.store(true, Relaxed);
     }
     async fn status(&self) -> bool {
         if self.enable && self.status.load(Relaxed) {

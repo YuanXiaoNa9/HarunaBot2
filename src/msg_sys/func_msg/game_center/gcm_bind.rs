@@ -1,14 +1,13 @@
+use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
-use futures_util::TryFutureExt;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use crate::msg_sys::func_mod::gc_name::GCNAME;
 
 pub struct GCMBind {
     pub(crate) status: AtomicBool,
@@ -54,10 +53,10 @@ impl FnHandler for GCMBind {
             struct NameData {
                 name: String,
             }
-            let res1 = sqlx::query_as!(
-                NameData,
+            let res1 = sqlx::query!(
                 "select name from gc_name where name = $1 and gid = $2",
-                vec_msg[3],msg.group_id
+                vec_msg[3],
+                msg.group_id
             )
             .fetch_all(&mut *tx)
             .await?;

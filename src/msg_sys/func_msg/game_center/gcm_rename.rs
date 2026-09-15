@@ -1,5 +1,6 @@
+use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::msg_func::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -7,7 +8,6 @@ use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use crate::msg_sys::func_mod::gc_name::GCNAME;
 
 pub struct GCMRename {
     pub(crate) status: AtomicBool,
@@ -41,18 +41,13 @@ impl FnHandler for GCMRename {
                 "参数错误\n使用方法:\n/机厅管理 重命名 <机厅id(可选)> <origin_name> <new_name>"
             ));
         }
-        struct Data {
-            gc_id: i64,
-        }
         struct DataNames {
             name: Option<String>,
             description: String,
             gc_id: i64,
-            admin_gid: i64,
         }
         let mut tx = DBLINK.db_link.get().unwrap().begin().await?;
-
-        let res = sqlx::query_as!(DataNames,"with id as(select gc_id from gc_name where (name = $1 or gc_id = $2) and gid = $3) select string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description,gamecenterdata.gc_id,gamecenterdata.admin_gid from gc_name inner join id on gc_name.gc_id = id.gc_id inner join gamecenterdata on id.gc_id = gamecenterdata.gc_id group by gamecenterdata.gc_id, gamecenterdata.description order by gamecenterdata.gc_id",gc_name,id,msg.group_id).fetch_all(&mut *tx).await?;
+        let res = sqlx::query_as!(DataNames,"with id as(select gc_id from gc_name where (name = $1 or gc_id = $2) and gid = $3) select string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description,gamecenterdata.gc_id from gc_name inner join id on gc_name.gc_id = id.gc_id inner join gamecenterdata on id.gc_id = gamecenterdata.gc_id group by gamecenterdata.gc_id, gamecenterdata.description order by gamecenterdata.gc_id",gc_name,id,msg.group_id).fetch_all(&mut *tx).await?;
         let data_counts = res.len();
         if data_counts == 0 {
             return Err(anyhow!("未找到符合条件的机厅"));
@@ -72,16 +67,9 @@ impl FnHandler for GCMRename {
             }
             return Err(anyhow!("{}\n\n请使用机厅id进行", query_list));
         } else {
-            struct NameData {
-                name: String,
-            }
-            let res1 = sqlx::query_as!(
-                NameData,
-                "select name from gc_name where name = $1",
-                new_name
-            )
-            .fetch_all(&mut *tx)
-            .await?;
+            let res1 = sqlx::query!("select name from gc_name where name = $1", new_name)
+                .fetch_all(&mut *tx)
+                .await?;
             if res1.len() != 0 {
                 return Err(anyhow!("与现有机厅重名，请更换名字"));
             }

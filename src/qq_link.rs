@@ -1,13 +1,18 @@
 use crate::MAIN_CONFIG;
+use crate::msg_sys::msg_reply::http_ip_process;
 use futures_util::StreamExt;
-use std::sync::OnceLock;
+use reqwest::{Client, RequestBuilder};
+use std::sync::{LazyLock, OnceLock};
 use std::time::Duration;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing::{error, info};
+
 pub static SEND_CHAN: OnceLock<Sender<String>> = OnceLock::new();
+pub static HTTP_CLIENT: LazyLock<Client> =
+    LazyLock::new(|| Client::builder().no_proxy().build().unwrap());
 pub async fn qq_link() -> tokio::sync::mpsc::Receiver<String> {
     //创建消息通道
     let (chan_sender, chan_receiver) = tokio::sync::mpsc::channel(200);
@@ -84,4 +89,13 @@ fn ws_ip_process() -> String {
         .unwrap_or(ip_port.as_str())
         .to_string();
     ip_port
+}
+
+pub fn http_get(post_type: &str) -> RequestBuilder {
+    HTTP_CLIENT
+        .post(format!("{}{}", http_ip_process(), post_type))
+        .header(
+            "Authorization",
+            format!("Bearer {}", MAIN_CONFIG.nc_setting.http_token),
+        )
 }
