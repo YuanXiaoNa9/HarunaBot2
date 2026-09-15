@@ -20,7 +20,6 @@ impl FnHandler for GcqrPlus {
     async fn matches(&self, msg: &Msg) -> bool {
         msg.raw_message.contains(&['+','加'])
             && msg.raw_message.ends_with(&['0','1','2','3','4','5','6','7','8','9'])
-            // && GCNAME.map.read().await.contains_key(format!("{}{}",msg.raw_message.split(&['+','加']).next().unwrap(), msg.group_id).as_str())
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
@@ -34,7 +33,7 @@ impl FnHandler for GcqrPlus {
         let mut tx = DBLINK.db_link.get().unwrap().begin().await?;
         let now_time = Local::now().timestamp();
         let gc_name = msg.raw_message.split(&['+','加']).next().unwrap();
-        let id = GCNAME.map.read().await.get(format!("{}{}",gc_name,msg.group_id).as_str()).unwrap().gc_id;
+        let id = GCNAME.map.read().await.get(format!("{}|{}",gc_name,msg.group_id).as_str()).unwrap().gc_id;
         let old_headcount = sqlx::query!("select headcount from gamecenterdata where gc_id = $1",id).fetch_one(&mut *tx).await?;
         let new_headcount = old_headcount.headcount+plus_headcount;
         sqlx::query!("update gamecenterdata set (headcount,report_id,report_time) = ($1,$2,$3) where gc_id = $4",new_headcount,msg.sender.user_id,now_time,id).execute(&mut *tx).await?;

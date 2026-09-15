@@ -18,7 +18,7 @@ impl FnHandler for GcqrSet {
     async fn matches(&self, msg: &Msg) -> bool {
         msg.raw_message.ends_with(&['0','1','2','3','4','5','6','7','8','9'])
             && !msg.raw_message.contains(&['+', '加', '-', '减'])
-            && GCNAME.map.read().await.contains_key(format!("{}{}",msg.raw_message.trim_end_matches(|c:char|c.is_ascii_digit()),msg.group_id).as_str())
+            && GCNAME.map.read().await.contains_key(format!("{}|{}",msg.raw_message.trim_end_matches(|c:char|c.is_ascii_digit()),msg.group_id).as_str())
 
     }
     #[anyhow_trace]

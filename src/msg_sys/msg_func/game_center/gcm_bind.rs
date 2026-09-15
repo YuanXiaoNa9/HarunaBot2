@@ -56,8 +56,8 @@ impl FnHandler for GCMBind {
             }
             let res1 = sqlx::query_as!(
                 NameData,
-                "select name from gc_name where name = $1",
-                vec_msg[3]
+                "select name from gc_name where name = $1 and gid = $2",
+                vec_msg[3],msg.group_id
             )
             .fetch_all(&mut *tx)
             .await?;

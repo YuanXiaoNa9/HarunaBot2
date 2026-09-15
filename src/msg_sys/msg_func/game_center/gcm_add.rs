@@ -39,8 +39,8 @@ impl FnHandler for GCMAdd {
         }
         let res = sqlx::query_as!(
             NameData,
-            "select name from gc_name where name = $1",
-            splits[2]
+            "select name from gc_name where name = $1 and gid = $2",
+            splits[2],msg.group_id
         )
         .fetch_all(&mut *tx)
         .await?;

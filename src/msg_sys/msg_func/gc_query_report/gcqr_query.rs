@@ -53,7 +53,7 @@ impl FnHandler for GcqrQuery {
         let mut tx = DBLINK.db_link.get().unwrap().clone().begin().await?;
         let name_map = GCNAME.map.read().await;
         let gc_id = name_map
-            .get(&format!("{}{}", &gc_name, msg.group_id))
+            .get(&format!("{}|{}", &gc_name, msg.group_id))
             .unwrap().gc_id;
         struct Data {
             report_time: i64,

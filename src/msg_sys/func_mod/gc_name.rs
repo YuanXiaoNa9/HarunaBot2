@@ -43,7 +43,7 @@ impl ModHandler for GcName {
         let mut map = GCNAME.map.write().await;
         map.clear();
         for data in vec_name {
-            debug!("found GC {} {}", format!("{}{}", data.name, data.gid), data.gc_id);
+            debug!("found GC {} {}", format!("{}|{}", data.name, data.gid), data.gc_id);
             map.insert(
                 format!("{}{}", data.name, data.gid),
                 GcData { gc_id: data.gc_id },

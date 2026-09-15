@@ -34,6 +34,7 @@ use tracing::log::warn;
 use tracing::{debug, error, info};
 use crate::msg_sys::msg_func::game_center::gcm_bind::GCMBind;
 use crate::msg_sys::msg_func::game_center::gcm_delete_name::GCMDeleteName;
+use crate::msg_sys::msg_func::game_center::gcm_rewrite_description::GCMReDescription;
 use crate::msg_sys::msg_func::game_center::gcm_search::GCMSearch;
 use crate::msg_sys::msg_func::game_center::gcm_unbind::GCMUnbind;
 use crate::msg_sys::msg_func::gc_query_report::gcqr_repo_plus::GcqrPlus;
@@ -275,6 +276,9 @@ fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
                 Box::new(GCMSearch {
                     status: AtomicBool::from(false),
                 }),
+                Box::new(GCMReDescription{ 
+                    status: AtomicBool::from(false),
+                }),
             ],
         }),
         Box::new(GCQR {
@@ -371,7 +375,7 @@ async fn bw_right(msg: &Msg) -> bool {
     } else if MAIN_CONFIG.bw_status == "white" {
         for white_id in MAIN_CONFIG.white_list.iter() {
             if msg.sender.user_id == *white_id {
-                return true;
+                return false;
             }
         }
         }

@@ -6,6 +6,7 @@ pub mod gcm_delete_name;
 pub mod gcm_rename;
 pub mod gcm_search;
 pub mod gcm_unbind;
+pub mod gcm_rewrite_description;
 
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::msg_sys::{FnHandler, Msg, mod_status_examine, sub_help, sub_init, sub_match_process};

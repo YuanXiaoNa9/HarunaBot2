@@ -28,7 +28,7 @@ impl FnHandler for GCQR {
         let gc_name = gc_name.strip_suffix("几个人").unwrap_or(gc_name);
         let gc_name = gc_name.trim_end_matches(|c: char| { c.is_ascii_digit() || ['+', '-'].contains(&c) });
         let gc_name = gc_name.strip_suffix(&['加','减']).unwrap_or(gc_name);
-        GCNAME.map.read().await.contains_key(format!("{}{}", gc_name, msg.group_id).as_str())
+        GCNAME.map.read().await.contains_key(format!("{}|{}", gc_name, msg.group_id).as_str())
     }
 #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {

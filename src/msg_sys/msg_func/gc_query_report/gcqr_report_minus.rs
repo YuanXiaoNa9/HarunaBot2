@@ -33,7 +33,7 @@ impl FnHandler for GcqrMinus {
         let mut tx = DBLINK.db_link.get().unwrap().begin().await?;
         let now_time = Local::now().timestamp();
         let gc_name = msg.raw_message.split(&['-','减']).next().unwrap();
-        let id = GCNAME.map.read().await.get(format!("{}{}",gc_name,msg.group_id).as_str()).unwrap().gc_id;
+        let id = GCNAME.map.read().await.get(format!("{}|{}",gc_name,msg.group_id).as_str()).unwrap().gc_id;
         let old_headcount = sqlx::query!("select headcount from gamecenterdata where gc_id = $1",id).fetch_one(&mut *tx).await?;
         let new_headcount = old_headcount.headcount- minus_headcount;
         if new_headcount < 0 {

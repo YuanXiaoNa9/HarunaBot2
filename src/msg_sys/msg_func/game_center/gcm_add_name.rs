@@ -61,8 +61,8 @@ impl FnHandler for GCMAddName {
         }
         let res1 = sqlx::query_as!(
             NameData,
-            "select name from gc_name where name = $1",
-            vec_splits[3]
+            "select name from gc_name where name = $1 and gid = $2",
+            vec_splits[3],msg.group_id
         )
         .fetch_all(&mut *tx)
         .await?;
