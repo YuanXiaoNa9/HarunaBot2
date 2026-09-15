@@ -20,15 +20,14 @@ impl FnHandler for GcqrMinus {
     async fn matches(&self, msg: &Msg) -> bool {
         msg.raw_message.contains(&['-','减'])
             && msg.raw_message.ends_with(&['0','1','2','3','4','5','6','7','8','9'])
-            // && GCNAME.map.read().await.contains_key(msg.raw_message.split(&['-','减']).next().unwrap())
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
-        let plus_headcount = msg.raw_message[msg.raw_message.matches(&['-','减']).count()+1..].parse::<i32>()?;
-        debug!("plus_headcount: {}", plus_headcount);
-        if plus_headcount < 1 {
+        let minus_headcount:i32 = msg.raw_message.split_once(&['-','减']).unwrap().1.parse()?;
+        debug!("minus_headcount: {}", minus_headcount);
+        if minus_headcount < 1 {
             return Err(Error::msg("minus headcount must be greater than 0"));
-        }else if plus_headcount > 20 {
+        }else if minus_headcount > 20 {
             return Err(Error::msg("minus headcount must be less than 20"));
         }
         let mut tx = DBLINK.db_link.get().unwrap().begin().await?;
@@ -36,11 +35,11 @@ impl FnHandler for GcqrMinus {
         let gc_name = msg.raw_message.split(&['-','减']).next().unwrap();
         let id = GCNAME.map.read().await.get(format!("{}{}",gc_name,msg.group_id).as_str()).unwrap().gc_id;
         let old_headcount = sqlx::query!("select headcount from gamecenterdata where gc_id = $1",id).fetch_one(&mut *tx).await?;
-        let new_headcount = old_headcount.headcount-plus_headcount;
+        let new_headcount = old_headcount.headcount- minus_headcount;
         if new_headcount < 0 {
             return Err(Error::msg("人数为负？zdjd"));
         }
-        sqlx::query!("update gamecenterdata set (headcount,report_id,report_time) = ($1,$2,$3)",new_headcount,msg.sender.user_id,now_time).execute(&mut *tx).await?;
+        sqlx::query!("update gamecenterdata set (headcount,report_id,report_time) = ($1,$2,$3)where gc_id = $4",new_headcount,msg.sender.user_id,now_time,id).execute(&mut *tx).await?;
         tx.commit().await?;
         let mut rep = SendMsg::new().await;
         rep.join_reply(msg.message_id).await;

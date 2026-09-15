@@ -83,7 +83,7 @@ impl FnHandler for GCMAdd {
     }
 
     async fn status(&self) -> bool {
-        true
+        self.status.load(Relaxed)
     }
 
     async fn help(&self, _: &str) -> String {

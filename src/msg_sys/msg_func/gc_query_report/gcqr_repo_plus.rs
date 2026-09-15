@@ -24,7 +24,7 @@ impl FnHandler for GcqrPlus {
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
-        let plus_headcount = msg.raw_message[msg.raw_message.matches(&['+','加']).count()+1..].parse::<i32>()?;
+        let plus_headcount:i32 = msg.raw_message.split_once(&['+','加']).unwrap().1.parse()?;
         debug!("plus_headcount: {}", plus_headcount);
         if plus_headcount < 1 {
             return Err(Error::msg("plus headcount must be greater than 0"));
@@ -37,7 +37,7 @@ impl FnHandler for GcqrPlus {
         let id = GCNAME.map.read().await.get(format!("{}{}",gc_name,msg.group_id).as_str()).unwrap().gc_id;
         let old_headcount = sqlx::query!("select headcount from gamecenterdata where gc_id = $1",id).fetch_one(&mut *tx).await?;
         let new_headcount = old_headcount.headcount+plus_headcount;
-        sqlx::query!("update gamecenterdata set (headcount,report_id,report_time) = ($1,$2,$3)",new_headcount,msg.sender.user_id,now_time).execute(&mut *tx).await?;
+        sqlx::query!("update gamecenterdata set (headcount,report_id,report_time) = ($1,$2,$3) where gc_id = $4",new_headcount,msg.sender.user_id,now_time,id).execute(&mut *tx).await?;
         tx.commit().await?;
         let mut rep = SendMsg::new().await;
         rep.join_reply(msg.message_id).await;
