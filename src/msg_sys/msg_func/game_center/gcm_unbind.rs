@@ -49,7 +49,7 @@ impl FnHandler for GCMUnbind {
             return Err(anyhow!("未找到符合条件的机厅"));
         } else if res.len() > 1 {
             let mut rep = String::new();
-            rep.push_str("找到多个机厅，使用\n/机厅管理 解除绑定 <机厅id>\n进行解绑操作");
+            rep.push_str("找到多个机厅，使用\n/机厅管理 解绑机厅 <机厅id>\n进行解绑操作");
             for i in res {
                 rep.push_str(
                     format!(
@@ -104,6 +104,6 @@ impl FnHandler for GCMUnbind {
     }
 
     async fn name(&self) -> String {
-        "解绑".to_string()
+        "解绑机厅".to_string()
     }
 }

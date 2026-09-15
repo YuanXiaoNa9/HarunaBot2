@@ -111,7 +111,7 @@ impl FnHandler for GcqrQuery {
     }
 
     async fn help(&self, _: &str) -> String {
-        "查询机厅人数使用".to_string()
+        "查询机厅人数使用\n使用方法：\n<机厅name><j/几/几人/几个人>\neg:\n大玩家几人".to_string()
     }
 
     async fn name(&self) -> String {

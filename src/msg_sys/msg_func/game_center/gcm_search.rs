@@ -21,7 +21,7 @@ impl FnHandler for GCMSearch {
         let count = msg.raw_message.split(" ").count();
         if count != 3 {
             return Err(anyhow!(
-                "参数错误\n使用方法：\n/机厅管理 搜索 <机厅名字(别名)>"
+                "参数错误\n使用方法：\n/机厅管理 搜索机厅 <机厅名字(别名)>"
             ));
         }
         let vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
@@ -59,10 +59,10 @@ impl FnHandler for GCMSearch {
     }
 
     async fn help(&self, _: &str) -> String {
-        "通过搜索机厅名字获取机厅id\n使用方法：\n/机厅管理 搜索 <机厅名字(别名)>".to_string()
+        "通过搜索机厅名字获取机厅id\n使用方法：\n/机厅管理 搜索机厅 <机厅名字(别名)>".to_string()
     }
 
     async fn name(&self) -> String {
-        "搜索".to_string()
+        "搜索机厅".to_string()
     }
 }

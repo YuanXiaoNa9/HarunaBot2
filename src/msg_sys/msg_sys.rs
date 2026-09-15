@@ -367,18 +367,16 @@ async fn bw_right(msg: &Msg) -> bool {
                 return true;
             }
         }
+        return false;
     } else if MAIN_CONFIG.bw_status == "white" {
         for white_id in MAIN_CONFIG.white_list.iter() {
-            if msg.sender.user_id != *white_id {
-                info!(
-                    "非允许用户：{}({})",
-                    msg.sender.nickname, msg.sender.user_id
-                );
+            if msg.sender.user_id == *white_id {
                 return true;
             }
         }
-    }
-    false
+        }
+    info!("非允许用户：{}({})",msg.sender.nickname, msg.sender.user_id);
+    true
 }
 //打印接收消息
 fn log_msg(msg: &Msg) {
@@ -477,6 +475,6 @@ pub async fn sub_help(helps:&str, handlers: &Vec<Box<dyn FnHandler + Send + Sync
         sub_help_data.push_str("\n...");
     }
     help_data.push_str(sub_help_data.as_str());
-    help_data.push_str("\n>\n\n使用\n/help <主功能>-<子功能>...\n来查询子功能详细用法\neg:\n/help 机厅管理-添加-删除");
+    help_data.push_str("\n>\n\n使用\n/help <主功能>-<子功能>...\n来查询子功能详细用法\neg:\n/help 机厅管理-添加-删除\n或者使用-all获取全部子项详细信息");
     help_data
 }
