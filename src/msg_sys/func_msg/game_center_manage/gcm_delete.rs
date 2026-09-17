@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center_manage::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -39,6 +39,7 @@ impl FnHandler for GCMDelete {
         }
         let res = sqlx::query_as!(Data,"with matches as ( select gc_id from gc_name where (name = $1 or gc_id = $2)) select gamecenterdata.gc_id,string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description,gamecenterdata.admin_gid from gc_name inner join matches on matches.gc_id = gc_name.gc_id inner join gamecenterdata on gamecenterdata.gc_id = gc_name.gc_id where gamecenterdata.gc_id = matches.gc_id group by gamecenterdata.gc_id,gamecenterdata.description order by gamecenterdata.gc_id",name,id).fetch_all(&mut *tx).await?;
         let mut rep = SendMsg::new().await;
+        rep.join_reply(msg.message_id).await;
         if res.len() > 1 {
             rep.join_text("找到多个可删除项:".to_string()).await;
             for result in res {

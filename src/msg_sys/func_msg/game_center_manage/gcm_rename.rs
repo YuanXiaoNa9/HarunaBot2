@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center_manage::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -28,10 +28,16 @@ impl FnHandler for GCMRename {
             vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
             gc_name = vec_msg[2];
             new_name = vec_msg[3];
+            if gc_name.contains(&['0','1','2','3','4','5','6','7','8','9']) {
+                return Err(anyhow!("机厅名字不能包含数字"))
+            }
         } else if msg.raw_message.split(" ").count() == 5 {
             vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
             gc_name = vec_msg[3];
             new_name = vec_msg[4];
+            if gc_name.contains(&['0','1','2','3','4','5','6','7','8','9']) {
+                return Err(anyhow!("机厅名字不能包含数字"))
+            }
             let ok = vec_msg[2];
             if ok.parse::<i64>().is_ok() {
                 id = ok.parse::<i64>()?;
@@ -84,6 +90,7 @@ impl FnHandler for GCMRename {
             .await?;
             tx.commit().await?;
             let mut rep = SendMsg::new().await;
+            rep.join_reply(msg.message_id).await;
             rep.join_text(format!(
                 "成功修改机厅名字\nid:{}\nold_name:{}\nnew_name:{}",
                 res[0].gc_id, gc_name, new_name

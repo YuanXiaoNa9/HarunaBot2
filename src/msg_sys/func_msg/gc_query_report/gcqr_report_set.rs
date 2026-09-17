@@ -40,7 +40,7 @@ impl FnHandler for GcqrSet {
             .map
             .read()
             .await
-            .get(format!("{}{}", gc_name, msg.group_id).as_str())
+            .get(format!("{}|{}", gc_name, msg.group_id).as_str())
             .ok_or_else(|| Error::msg("no gc name found"))?
             .gc_id;
         sqlx::query!("update gamecenterdata set (headcount,report_id,report_time) = ($1,$2,$3) where gc_id = $4", new_headcount,msg.sender.user_id,now_time,gc_id).execute(&mut *tx).await?;

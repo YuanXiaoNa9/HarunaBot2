@@ -1,5 +1,5 @@
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::func_msg::game_center::sub_matches;
+use crate::msg_sys::func_msg::game_center_manage::sub_matches;
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -32,7 +32,7 @@ impl FnHandler for GCMSearch {
             name: Option<String>,
             description: String,
         }
-        let res = sqlx::query_as!(Data,"select gamecenterdata.gc_id,string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description from gc_name inner join gamecenterdata on gc_name.gc_id = gamecenterdata.gc_id where gc_name.name = $1 group by gamecenterdata.gc_id,gamecenterdata.description",search_name).fetch_all(&mut *tx).await?;
+        let res = sqlx::query_as!(Data,"with matches1 as ( select distinct gc_id from gc_name where name = $1 ) ,matches2 as ( select gamecenterdata.admin_gid from gamecenterdata inner join matches1 on matches1.gc_id = gamecenterdata.gc_id where gamecenterdata.gc_id = matches1.gc_id) select gamecenterdata.gc_id,string_agg(gc_name.name,' 'order by gc_name)as name,gamecenterdata.description from gc_name inner join gamecenterdata on gamecenterdata.gc_id = gc_name.gc_id inner join matches1 on matches1.gc_id = gc_name.gc_id inner join matches2 on matches2.admin_gid = gc_name.gid group by gamecenterdata.gc_id,gamecenterdata.description order by gamecenterdata.gc_id ",search_name).fetch_all(&mut *tx).await?;
         tx.commit().await?;
         let mut rep = SendMsg::new().await;
         rep.join_reply(msg.message_id).await;

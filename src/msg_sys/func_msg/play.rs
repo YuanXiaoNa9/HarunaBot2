@@ -19,9 +19,11 @@ impl FnHandler for Play {
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let mut rep = SendMsg::new().await;
+        rep.join_reply(msg.message_id).await;
         rep.join_text("不许给我转QQ农场喵".to_string()).await;
         rep.send_msg(msg).await;
         let mut rep1 = SendMsg::new().await;
+        rep1.join_reply(msg.message_id).await;
         rep1.join_text("本喵会不开心的喵".to_string()).await;
         rep1.send_msg(msg).await;
         Ok(())

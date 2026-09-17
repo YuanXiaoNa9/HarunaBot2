@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center_manage::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -26,17 +26,20 @@ impl FnHandler for GCMAdd {
                 "参数有误\n使用方式:\n/机厅管理 添加机厅 <name> <备注>"
             ));
         }
-        let splits = msg.raw_message.split(" ").collect::<Vec<&str>>();
+        let vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
+        if vec_msg[2].contains(&['0','1','2','3','4','5','6','7','8','9']) {
+            return Err(anyhow!("机厅名字不能包含数字"))
+        }
         let description: &str;
-        if !splits[3].is_empty() {
-            description = splits[3]
+        if !vec_msg[3].is_empty() {
+            description = vec_msg[3]
         } else {
             description = "该机厅未备注"
         }
         let mut tx = DBLINK.db_link.get().unwrap().clone().begin().await?;
         let res = sqlx::query!(
             "select name from gc_name where name = $1 and gid = $2",
-            splits[2],
+            vec_msg[2],
             msg.group_id
         )
         .fetch_all(&mut *tx)
@@ -59,15 +62,16 @@ impl FnHandler for GCMAdd {
             "insert into gc_name (gc_id,gid,name)values($1,$2,$3)",
             res.gc_id,
             msg.group_id,
-            splits[2]
+            vec_msg[2]
         )
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
         let mut rep = SendMsg::new().await;
+        rep.join_reply(msg.message_id).await;
         rep.join_text(format!(
             "成功添加机厅: {}\n机厅备注为: {}\n机厅id为: {}",
-            splits[2], splits[3], res.gc_id
+            vec_msg[2], vec_msg[3], res.gc_id
         ))
         .await;
         rep.send_forward_msg(msg).await;

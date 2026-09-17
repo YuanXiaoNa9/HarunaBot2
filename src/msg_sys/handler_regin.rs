@@ -3,16 +3,16 @@ use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::func_msg::emoji_photo::MemPhoto;
 use crate::msg_sys::func_msg::emoji_say::EmoMjk;
-use crate::msg_sys::func_msg::game_center::GameCenterManager;
-use crate::msg_sys::func_msg::game_center::gcm_add::GCMAdd;
-use crate::msg_sys::func_msg::game_center::gcm_add_name::GCMAddName;
-use crate::msg_sys::func_msg::game_center::gcm_bind::GCMBind;
-use crate::msg_sys::func_msg::game_center::gcm_delete::GCMDelete;
-use crate::msg_sys::func_msg::game_center::gcm_delete_name::GCMDeleteName;
-use crate::msg_sys::func_msg::game_center::gcm_rename::GCMRename;
-use crate::msg_sys::func_msg::game_center::gcm_rewrite_description::GCMReDescription;
-use crate::msg_sys::func_msg::game_center::gcm_search::GCMSearch;
-use crate::msg_sys::func_msg::game_center::gcm_unbind::GCMUnbind;
+use crate::msg_sys::func_msg::game_center_manage::GameCenterManager;
+use crate::msg_sys::func_msg::game_center_manage::gcm_add::GCMAdd;
+use crate::msg_sys::func_msg::game_center_manage::gcm_add_name::GCMAddName;
+use crate::msg_sys::func_msg::game_center_manage::gcm_bind::GCMBind;
+use crate::msg_sys::func_msg::game_center_manage::gcm_delete::GCMDelete;
+use crate::msg_sys::func_msg::game_center_manage::gcm_delete_name::GCMDeleteName;
+use crate::msg_sys::func_msg::game_center_manage::gcm_rename::GCMRename;
+use crate::msg_sys::func_msg::game_center_manage::gcm_rewrite_description::GCMReDescription;
+use crate::msg_sys::func_msg::game_center_manage::gcm_search::GCMSearch;
+use crate::msg_sys::func_msg::game_center_manage::gcm_unbind::GCMUnbind;
 use crate::msg_sys::func_msg::gc_query_report::GCQR;
 use crate::msg_sys::func_msg::gc_query_report::gcqr_query::GcqrQuery;
 use crate::msg_sys::func_msg::gc_query_report::gcqr_repo_plus::GcqrPlus;
@@ -29,6 +29,8 @@ use crate::msg_sys::func_notice::poke::Poke;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler};
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
+use crate::msg_sys::func_msg::flip_horizontally::FlipHorizontally;
+use crate::msg_sys::func_msg::game_center_manage::gcm_query_gc::GCMQueryGc;
 
 pub fn mod_handler_regin() -> Vec<&'static (dyn ModHandler + Send + Sync)> {
     let handlers: Vec<&'static (dyn ModHandler + Send + Sync)> = vec![&*TTF, &*DBLINK, &*GCNAME];
@@ -89,6 +91,8 @@ pub fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
                 Box::new(GCMReDescription {
                     status: AtomicBool::from(false),
                 }),
+                Box::new(GCMQueryGc{
+                    status: AtomicBool::from(false), }),
             ],
         }),
         Box::new(GCQR {
@@ -108,6 +112,8 @@ pub fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
                 }),
             ],
         }),
+        Box::new(FlipHorizontally{
+            enabled: true, status: AtomicBool::from(false) }),
         Box::new(PlusOne {
             status: AtomicBool::from(false),
             map: OnceLock::new(),

@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center_manage::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -26,9 +26,12 @@ impl FnHandler for GCMAddName {
                 "参数有误\n使用方法：\n/机厅管理 添加名字 <机厅id/机厅name> <new_name>"
             ));
         }
-        let vec_splits: Vec<&str> = msg.raw_message.split(" ").collect();
-        let name = vec_splits[2];
-        let ok = vec_splits[2].parse::<i64>();
+        let vec_msg: Vec<&str> = msg.raw_message.split(" ").collect();
+        if vec_msg[2].contains(&['0','1','2','3','4','5','6','7','8','9']) {
+            return Err(anyhow!("机厅名字不能包含数字"))
+        }
+        let name = vec_msg[2];
+        let ok = vec_msg[2].parse::<i64>();
         let id = if ok.is_ok() { ok? } else { 0 };
         let mut tx = DBLINK.db_link.get().unwrap().begin().await?;
         struct Data {
@@ -58,7 +61,7 @@ impl FnHandler for GCMAddName {
         let old_names = res[0].name.clone().unwrap();
         let res1 = sqlx::query!(
             "select name from gc_name where name = $1 and gid = $2",
-            vec_splits[3],
+            vec_msg[3],
             msg.group_id
         )
         .fetch_all(&mut *tx)
@@ -71,15 +74,16 @@ impl FnHandler for GCMAddName {
             "insert into gc_name (gc_id,gid,name)values ($1,$2,$3)",
             res[0].gc_id,
             msg.group_id,
-            vec_splits[3]
+            vec_msg[3]
         )
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
         let mut rep = SendMsg::new().await;
+        rep.join_reply(msg.message_id).await;
         rep.join_text(format!(
             "添加名字成功\nid: {}\nname: {} {}\n备注: {}",
-            res[0].gc_id, old_names, vec_splits[3], res[0].description
+            res[0].gc_id, old_names, vec_msg[3], res[0].description
         ))
         .await;
         rep.send_forward_msg(msg).await;

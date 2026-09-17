@@ -13,7 +13,6 @@ pub mod gcqr_query;
 pub mod gcqr_repo_plus;
 pub mod gcqr_report_minus;
 pub mod gcqr_report_set;
-
 pub struct GCQR {
     pub(crate) status: AtomicBool,
     pub(crate) sub_function: Vec<Box<dyn FnHandler + Send + Sync>>,

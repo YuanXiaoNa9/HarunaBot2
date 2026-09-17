@@ -108,7 +108,7 @@ impl FnHandler for EmoMjk {
         let end_time = pic_start_time.elapsed();
         let file_name: i32 = rand::random();
         let mut rep = SendMsg::new().await;
-
+        rep.join_reply(msg.message_id).await;
         if MAIN_CONFIG.nc_setting.img_send_way == "b64"
             || MAIN_CONFIG.nc_setting.img_send_way == "base64"
         {

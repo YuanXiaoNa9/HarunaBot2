@@ -26,6 +26,7 @@ impl FnHandler for Help {
         splits.next();
         //创建回复的空回复结构体
         let mut rep = SendMsg::new().await;
+        rep.join_reply(msg.message_id).await;
         //回复总help list
         //help带有参数时会开始的逻辑
         //创建未找到帮助名称的空string

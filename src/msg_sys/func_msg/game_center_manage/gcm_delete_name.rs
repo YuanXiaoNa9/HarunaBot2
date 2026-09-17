@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center_manage::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};

@@ -1,9 +1,10 @@
 pub mod emoji_photo;
 pub mod emoji_say;
-pub mod game_center;
+pub mod game_center_manage;
 pub mod gc_query_report;
 pub mod help;
 pub mod play;
 pub mod plusone;
 pub(crate) mod test;
 pub mod ttt;
+pub mod flip_horizontally;

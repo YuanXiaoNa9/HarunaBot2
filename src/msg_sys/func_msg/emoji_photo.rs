@@ -33,13 +33,7 @@ impl FnHandler for MemPhoto {
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let start = std::time::Instant::now();
-        let id = get_img_id(msg).await;
-        let id = match id {
-            None => {
-                return Err(anyhow!("未找到图片id"));
-            }
-            Some(id) => id,
-        };
+        let id = get_img_id(msg).await?;
         let bytes = get_img(id).await;
         let img = ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()?
@@ -72,10 +66,9 @@ impl FnHandler for MemPhoto {
             ImageReader::open(format!("{}/pic/die.jpg", PATH.as_str()))?.decode()?;
         let end_img = end_img.grayscale();
         overlay(&mut ground_img, &end_img, 126, 107);
-        let mut buf = Cursor::new(Vec::new());
-        ground_img.write_to(&mut buf, Png)?;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
+        let b64 = img_to_base64(ground_img)?;
         let mut rep = SendMsg::new().await;
+        rep.join_reply(msg.message_id).await;
         rep.join_image(format!("base64://{}", b64)).await;
         rep.join_text(format!("耗时:{:?}", start.elapsed())).await;
         rep.send_msg(msg).await;
@@ -95,15 +88,16 @@ impl FnHandler for MemPhoto {
     }
 
     async fn name(&self) -> String {
-        "遗照".to_string()
+        "生成遗照".to_string()
     }
 }
-async fn get_img(file_id: String) -> tungstenite::Bytes {
+pub async fn get_img(file_id: String) -> tungstenite::Bytes {
     let resp = HTTP_CLIENT.get(&file_id).send().await.unwrap();
     let bytes = resp.bytes().await.unwrap();
     bytes
 }
-async fn get_img_id(msg: &Msg) -> Option<String> {
+#[anyhow_trace]
+pub async fn get_img_id(msg: &Msg) -> Result<String,Error> {
     #[derive(Serialize, Deserialize, Debug)]
     struct Body {
         file: String,
@@ -114,7 +108,6 @@ async fn get_img_id(msg: &Msg) -> Option<String> {
     }
     #[derive(Deserialize, Debug)]
     struct ImageData {
-        status: String,
         retcode: i16,
         data: Data,
         message: String,
@@ -150,48 +143,55 @@ async fn get_img_id(msg: &Msg) -> Option<String> {
         font: i16,
         sub_type: String,
         post_type: String,
-        group_id: i64,
-        group_name: String,
     }
     #[derive(Serialize, Deserialize, Debug)]
     struct Sender {
         user_id: i64,
         nickname: String,
         card: String,
-        role: String,
     }
     let start: usize;
     let end: usize;
     let id: String;
     if msg.raw_message.starts_with("[CQ:reply,id=") {
         let start1 = msg.raw_message.find("[CQ:reply,id=").unwrap() + 13;
-        let end1 = msg.raw_message.find("]怀念").unwrap();
+        let end1 = msg.raw_message.find("]").unwrap();
         let message_id = msg.raw_message[start1..end1].to_string();
         let req = BodyGetMsg { message_id };
-        let rsp = http_get("/get_msg").json(&req).send().await.unwrap();
-        let str = rsp.text().await.unwrap();
+        let rsp = http_get("/get_msg").json(&req).send().await?;
+        let str = rsp.text().await?;
         debug!("{}", str);
-        let res: MessageData = serde_json::from_str(&str).unwrap();
+        let res: MessageData = serde_json::from_str(&str)?;
         let msg = res.data;
         start = msg.raw_message.find(",file=").unwrap() + 6;
         end = msg.raw_message.find(",sub_type=").unwrap();
         id = msg.raw_message[start..end].to_string();
-    } else if msg.raw_message.starts_with("怀念") {
+    } else if msg.raw_message.contains("[CQ:image,file=") {
+        start = msg.raw_message.find(",file=").unwrap() + 6;
+        end = msg.raw_message.find(",sub_type=").unwrap();
+        id = msg.raw_message[start..end].to_string();
+    } else if msg.raw_message.contains("[CQ:image,summary=") {
         start = msg.raw_message.find(",file=").unwrap() + 6;
         end = msg.raw_message.find(",sub_type=").unwrap();
         id = msg.raw_message[start..end].to_string();
     } else {
-        return None;
+        return Err(anyhow!("未找到图片id"));
     }
     let req = Body { file: id };
     let rsp = http_get("/get_image")
         .json(&req)
         .json(&req)
         .send()
-        .await
-        .unwrap();
-    let str = rsp.text().await.unwrap();
+        .await?;
+    let str = rsp.text().await?;
     debug!("{}", &str);
-    let resp: ImageData = serde_json::from_str(&str).unwrap();
-    Option::from(resp.data.url)
+    let resp: ImageData = serde_json::from_str(&str)?;
+    Ok(resp.data.url)
+}
+
+pub fn img_to_base64(pic:DynamicImage) -> Result<String,Error> {
+    let mut buf = Cursor::new(Vec::new());
+    pic.write_to(&mut buf, Png)?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
+    Ok(b64)
 }

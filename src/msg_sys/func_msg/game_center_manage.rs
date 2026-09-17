@@ -7,7 +7,9 @@ pub mod gcm_rename;
 pub mod gcm_rewrite_description;
 pub mod gcm_search;
 pub mod gcm_unbind;
+pub mod gcm_query_gc;
 
+use crate::msg_sys::func_config::FUNC_CONFIG;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::msg_sys::{
     FnHandler, Msg, mod_status_examine, sub_help, sub_init, sub_match_process,
@@ -99,7 +101,7 @@ pub async fn useable_judgment(msg: &Msg) -> Result<(), Error> {
     if msg.message_type != "group" {
         return Err(anyhow!("请在群聊内使用"));
     }
-    if msg.sender.role == "member" {
+    if msg.sender.role == "member" && !FUNC_CONFIG.get().unwrap().super_admin.contains(&msg.sender.user_id){
         return Err(anyhow!("非管理员无法操作"));
     }
     Ok(())

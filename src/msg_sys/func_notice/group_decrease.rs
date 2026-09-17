@@ -16,6 +16,9 @@ impl FnHandler for Decrease {
     }
 
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
+        if msg.user_id == msg.self_id {
+            return Ok(());
+        }
         let user_id = msg.user_id;
         #[derive(Serialize)]
         struct Body {

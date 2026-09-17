@@ -1,6 +1,6 @@
 use crate::msg_sys::func_mod::gc_name::GCNAME;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
-use crate::msg_sys::func_msg::game_center::{sub_matches, useable_judgment};
+use crate::msg_sys::func_msg::game_center_manage::{sub_matches, useable_judgment};
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler, Msg};
 use anyhow::{Error, anyhow};
@@ -27,6 +27,9 @@ impl FnHandler for GCMBind {
             ));
         }
         let vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
+        if vec_msg[2].contains(&['0','1','2','3','4','5','6','7','8','9']) {
+            return Err(anyhow!("机厅名字不能包含数字"))
+        }
         let new_name = vec_msg[3];
         let bind_id = vec_msg[2].parse::<i64>()?;
         let mut tx = DBLINK.db_link.get().unwrap().clone().begin().await?;
