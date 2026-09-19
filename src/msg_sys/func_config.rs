@@ -5,7 +5,7 @@ use tracing::{error, info};
 pub static FUNC_CONFIG: OnceLock<FuncConfig> = OnceLock::new();
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FuncConfig {
-    pub super_admin:Vec<i64>,
+    pub super_admin: Vec<i64>,
     pub(crate) postgres: PGConfig,
 }
 #[derive(Serialize, Deserialize, Debug)]
@@ -56,7 +56,7 @@ pub fn func_config_get() {
 fn create_config() {
     info!("正在写入新配置文件");
     let file_data = FuncConfig {
-        super_admin:vec![],
+        super_admin: vec![],
         postgres: PGConfig {
             pg_ip_port: "".to_string(),
             pg_username: "".to_string(),

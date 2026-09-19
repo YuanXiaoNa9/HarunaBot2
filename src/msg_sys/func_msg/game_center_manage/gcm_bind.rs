@@ -27,8 +27,8 @@ impl FnHandler for GCMBind {
             ));
         }
         let vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
-        if vec_msg[2].contains(&['0','1','2','3','4','5','6','7','8','9']) {
-            return Err(anyhow!("机厅名字不能包含数字"))
+        if vec_msg[3].contains(&['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+            return Err(anyhow!("机厅名字不能包含数字"));
         }
         let new_name = vec_msg[3];
         let bind_id = vec_msg[2].parse::<i64>()?;

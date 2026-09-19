@@ -27,8 +27,8 @@ impl FnHandler for GCMAddName {
             ));
         }
         let vec_msg: Vec<&str> = msg.raw_message.split(" ").collect();
-        if vec_msg[2].contains(&['0','1','2','3','4','5','6','7','8','9']) {
-            return Err(anyhow!("机厅名字不能包含数字"))
+        if vec_msg[2].contains(&['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+            return Err(anyhow!("机厅名字不能包含数字"));
         }
         let name = vec_msg[2];
         let ok = vec_msg[2].parse::<i64>();
@@ -39,7 +39,7 @@ impl FnHandler for GCMAddName {
             name: Option<String>,
             description: String,
         }
-        let res = sqlx::query_as!(Data,"with matches as ( select gc_id from gc_name where (name = $1 or gc_id = $2)) select gamecenterdata.gc_id,string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description from gc_name inner join matches on matches.gc_id = gc_name.gc_id inner join gamecenterdata on gamecenterdata.gc_id = gc_name.gc_id where gamecenterdata.gc_id = matches.gc_id and gc_name.gid = $3 group by gamecenterdata.gc_id,gamecenterdata.description order by gamecenterdata.gc_id",name,id,msg.group_id).fetch_all(&mut *tx).await?;
+        let res = sqlx::query_as!(Data,"with matches1 as ( select distinct gc_id from gc_name where (name = $1 or gc_id = $2) and gid = $3)select gamecenterdata.gc_id,string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description from gc_name inner join gamecenterdata on gc_name.gc_id = gamecenterdata.gc_id inner join matches1 on matches1.gc_id = gc_name.gc_id where gc_name.gid = $3 group by gamecenterdata.gc_id, gamecenterdata.description order by gamecenterdata.gc_id",name,id,msg.group_id).fetch_all(&mut *tx).await?;
         if res.len() == 0 {
             return Err(anyhow!("未找到符合条件的机厅"));
         } else if res.len() > 1 {

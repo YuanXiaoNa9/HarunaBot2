@@ -20,7 +20,7 @@ impl FnHandler for Increase {
             rep.join_at(user_id).await;
             rep.join_text("你好呀，欢迎加入，可以使用/help获取功能帮助哦\n新功能正在绝赞开发中\n当然你有好的想法不妨告诉我哦".to_string()).await;
             rep.send_msg(msg).await;
-        }else {
+        } else {
             let mut rep = SendMsg::new().await;
             rep.join_at(user_id).await;
             rep.join_text("始めまして、はるなで~す、よろしくね~\n可以使用/help获取功能帮助哦\n新功能正在绝赞开发中\n当然你有好的想法不妨告诉我哦".to_string()).await;

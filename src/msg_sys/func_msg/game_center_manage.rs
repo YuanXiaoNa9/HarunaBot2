@@ -3,11 +3,11 @@ pub mod gcm_add_name;
 pub mod gcm_bind;
 pub mod gcm_delete;
 pub mod gcm_delete_name;
+pub mod gcm_query_gc;
 pub mod gcm_rename;
 pub mod gcm_rewrite_description;
 pub mod gcm_search;
 pub mod gcm_unbind;
-pub mod gcm_query_gc;
 
 use crate::msg_sys::func_config::FUNC_CONFIG;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
@@ -101,7 +101,13 @@ pub async fn useable_judgment(msg: &Msg) -> Result<(), Error> {
     if msg.message_type != "group" {
         return Err(anyhow!("请在群聊内使用"));
     }
-    if msg.sender.role == "member" && !FUNC_CONFIG.get().unwrap().super_admin.contains(&msg.sender.user_id){
+    if msg.sender.role == "member"
+        && !FUNC_CONFIG
+            .get()
+            .unwrap()
+            .super_admin
+            .contains(&msg.sender.user_id)
+    {
         return Err(anyhow!("非管理员无法操作"));
     }
     Ok(())

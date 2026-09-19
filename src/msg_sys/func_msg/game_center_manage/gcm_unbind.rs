@@ -44,7 +44,7 @@ impl FnHandler for GCMUnbind {
             description: String,
             admin_gid: i64,
         }
-        let res = sqlx::query_as!(Data,"with matches as (select gc_id from gc_name where (($2::bigint is null or gc_id = $2::bigint) and ($1::text is null or name = $1::text))and gid = $3) select gc_name.gc_id,string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description,gamecenterdata.admin_gid from gc_name inner join matches on gc_name.gc_id = matches.gc_id inner join gamecenterdata on gc_name.gc_id = gamecenterdata.gc_id where gc_name.gid = $3 group by gc_name.gc_id,gamecenterdata.description,gamecenterdata.admin_gid",name,id,msg.group_id).fetch_all(&mut *tx).await?;
+        let res = sqlx::query_as!(Data,"with matches as (select distinct gc_id from gc_name where (($2::bigint is null or gc_id = $2::bigint) and ($1::text is null or name = $1::text))and gid = $3) select gc_name.gc_id,string_agg(gc_name.name,' 'order by gc_name.name)as name,gamecenterdata.description,gamecenterdata.admin_gid from gc_name inner join matches on gc_name.gc_id = matches.gc_id inner join gamecenterdata on gc_name.gc_id = gamecenterdata.gc_id where gc_name.gid = $3 group by gc_name.gc_id,gamecenterdata.description,gamecenterdata.admin_gid",name,id,msg.group_id).fetch_all(&mut *tx).await?;
         if res.len() == 0 {
             return Err(anyhow!("未找到符合条件的机厅"));
         } else if res.len() > 1 {

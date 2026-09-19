@@ -17,7 +17,9 @@ dependencies = [
  "image",
  "imageproc",
  "rand 0.10.2",
+ "rayon",
  "reqwest",
+ "rusty_gif",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2361,6 +2363,15 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "rusty_gif"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb092d79ff8c1f2e90f934235f96c5d770571df23e3cf1c53004469c0bcd32a8"
+dependencies = [
+ "weezl",
+]
 
 [[package]]
 name = "ryu"

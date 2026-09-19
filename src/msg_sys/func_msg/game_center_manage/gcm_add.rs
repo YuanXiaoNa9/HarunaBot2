@@ -8,6 +8,7 @@ use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use tracing::debug;
 
 pub struct GCMAdd {
     pub(crate) status: AtomicBool,
@@ -21,17 +22,18 @@ impl FnHandler for GCMAdd {
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         useable_judgment(msg).await?;
         let i = msg.raw_message.split(" ").count() as i16;
-        if i != 4 {
+        if i < 3 {
             return Err(anyhow!(
                 "参数有误\n使用方式:\n/机厅管理 添加机厅 <name> <备注>"
             ));
         }
         let vec_msg = msg.raw_message.split(" ").collect::<Vec<&str>>();
-        if vec_msg[2].contains(&['0','1','2','3','4','5','6','7','8','9']) {
-            return Err(anyhow!("机厅名字不能包含数字"))
+        let name = vec_msg[2];
+        if name.contains(&['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+            return Err(anyhow!("机厅名字不能包含数字"));
         }
         let description: &str;
-        if !vec_msg[3].is_empty() {
+        if vec_msg.get(3).is_some() {
             description = vec_msg[3]
         } else {
             description = "该机厅未备注"
@@ -39,12 +41,13 @@ impl FnHandler for GCMAdd {
         let mut tx = DBLINK.db_link.get().unwrap().clone().begin().await?;
         let res = sqlx::query!(
             "select name from gc_name where name = $1 and gid = $2",
-            vec_msg[2],
+            name,
             msg.group_id
         )
         .fetch_all(&mut *tx)
         .await?;
         if res.len() != 0 {
+            debug!("{:?}", res.first());
             return Err(anyhow!("与现有机厅重名，请更换名字"));
         }
         struct Data {
@@ -62,7 +65,7 @@ impl FnHandler for GCMAdd {
             "insert into gc_name (gc_id,gid,name)values($1,$2,$3)",
             res.gc_id,
             msg.group_id,
-            vec_msg[2]
+            name
         )
         .execute(&mut *tx)
         .await?;
@@ -71,7 +74,7 @@ impl FnHandler for GCMAdd {
         rep.join_reply(msg.message_id).await;
         rep.join_text(format!(
             "成功添加机厅: {}\n机厅备注为: {}\n机厅id为: {}",
-            vec_msg[2], vec_msg[3], res.gc_id
+            name, description, res.gc_id
         ))
         .await;
         rep.send_forward_msg(msg).await;
