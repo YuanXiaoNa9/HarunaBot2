@@ -35,6 +35,9 @@ pub struct MemPhoto {
 #[async_trait]
 impl FnHandler for MemPhoto {
     async fn matches(&self, msg: &Msg) -> bool {
+        if msg.raw_message.starts_with("[bot_msg]"){
+            return false;
+        }
         let start = match msg.raw_message.rfind("]") {
             None => return false,
             Some(ok) => ok,
