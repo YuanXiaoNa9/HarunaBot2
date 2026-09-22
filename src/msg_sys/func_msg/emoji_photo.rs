@@ -7,6 +7,7 @@ use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use futures_util::StreamExt;
 use image::ImageFormat::{Gif, Png};
 use image::codecs::gif::GifDecoder;
 use image::imageops::overlay;
@@ -14,12 +15,11 @@ use image::{AnimationDecoder, DynamicImage, Frame, ImageReader};
 use imageproc::drawing::Canvas;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
+use rusty_gif::DisposalMethod::Background;
 use rusty_gif::Encoder;
 use rusty_gif::Frame as GifFrame;
 use rusty_gif::Repeat::Infinite;
 use serde::{Deserialize, Serialize};
-use sqlx::Encode;
-use std::fmt::UpperHex;
 use std::io::Cursor;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
@@ -33,7 +33,7 @@ impl FnHandler for MemPhoto {
     async fn matches(&self, msg: &Msg) -> bool {
         if msg.raw_message.starts_with("怀念[CQ:image,")
             || msg.raw_message.starts_with("怀念\n[CQ:image,")
-            || (msg.raw_message.starts_with("[CQ:reply,id=") && msg.raw_message.ends_with("]怀念"))
+            || (msg.raw_message.starts_with("[CQ:reply,id=") && msg.raw_message.ends_with("怀念"))
         {
             return true;
         }
@@ -47,29 +47,35 @@ impl FnHandler for MemPhoto {
         let fmt = image::guess_format(&bytes)?;
         let b64: String;
         if fmt == Gif {
-            let decoders = GifDecoder::new(Cursor::new(bytes))?;
-            let frames = decoders.into_frames().collect_frames()?;
-            let new_frames: Vec<Frame> = frames
-                .into_par_iter()
-                .map(|frame| {
-                    let delay = frame.delay();
-                    let img = frame.into_buffer();
-                    let new_img = photo_process(DynamicImage::from(img)).unwrap();
-                    Frame::from_parts(new_img.into(), 0, 0, delay)
-                })
-                .collect();
             let mut buf = Vec::new();
+            let (w, h) = (778u16, 777u16);
             {
-                let mut encoder = Encoder::new(&mut buf, 778, 777, &[])?;
+                let mut encoder = Encoder::new(&mut buf, w, h, &[])?;
                 encoder.set_repeat(Infinite)?;
+                let decoders = GifDecoder::new(Cursor::new(bytes))?;
+                let frames = decoders.into_frames().collect_frames()?;
+                let new_frames: Vec<rusty_gif::Frame> = frames
+                    .into_par_iter()
+                    .map(|frame| {
+                        let delay = frame.delay();
+                        let img = frame.into_buffer();
+                        let dispose = img.pixels().any(|p| p.0[3] < 255);
+                        let new_img = photo_process(DynamicImage::from(img)).unwrap();
+                        let new_frame = Frame::from_parts(new_img.into(), 0, 0, delay);
+                        let (num, den) = new_frame.delay().numer_denom_ms();
+                        let delay = num as f64 / den as f64;
+                        let delay = (delay / 10.0).round() as u16;
+                        let mut img = new_frame.into_buffer();
+                        let mut gif_img = GifFrame::from_rgba(w, h, &mut img);
+                        gif_img.delay = delay;
+                        if dispose {
+                            gif_img.dispose = Background
+                        }
+                        gif_img
+                    })
+                    .collect();
                 for new_frame in new_frames {
-                    let (num, den) = new_frame.delay().numer_denom_ms();
-                    let delay = num as f64 / den as f64;
-                    let delay = (delay / 10.0).round() as u16;
-                    let mut img = new_frame.into_buffer();
-                    let mut gif_img = GifFrame::from_rgba(778, 777, &mut img);
-                    gif_img.delay = delay;
-                    encoder.write_frame(&rusty_gif::Frame::from(gif_img))?;
+                    encoder.write_frame(&new_frame)?;
                 }
             }
             let str = STANDARD.encode(&buf);

@@ -29,8 +29,9 @@ use crate::msg_sys::func_notice::group_decrease::Decrease;
 use crate::msg_sys::func_notice::group_increase::Increase;
 use crate::msg_sys::func_notice::poke::Poke;
 use crate::msg_sys::msg_sys::{FnHandler, ModHandler};
+use dashmap::DashMap;
 use std::sync::OnceLock;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 pub fn mod_handler_regin() -> Vec<&'static (dyn ModHandler + Send + Sync)> {
     let handlers: Vec<&'static (dyn ModHandler + Send + Sync)> = vec![&*TTF, &*DBLINK, &*GCNAME];
@@ -56,6 +57,8 @@ pub fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
         Box::new(TTT {
             enable: false,
             status: AtomicBool::from(false),
+            data_map: OnceLock::from(DashMap::new()),
+            data_map_status: AtomicUsize::new(0),
         }),
         Box::new(MemPhoto {
             status: AtomicBool::from(false),

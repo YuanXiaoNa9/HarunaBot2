@@ -30,7 +30,7 @@ impl FnHandler for Help {
         //回复总help list
         //help带有参数时会开始的逻辑
         //创建未找到帮助名称的空string
-        let mut unfind_help = String::new();
+        let mut define_help = String::new();
         //构建help list消息头
         rep.join_text("[ help list ]".to_string()).await;
         let mut help_data = String::new();
@@ -55,7 +55,7 @@ impl FnHandler for Help {
                 //判断是否匹配成功
             }
             //如果上述条件均不符合就加入到未找到列表
-            unfind_help.push_str(format!(" {}", split).as_str());
+            define_help.push_str(format!(" {}", split).as_str());
         }
 
         if help_data.is_empty() {
@@ -63,8 +63,8 @@ impl FnHandler for Help {
         }
         rep.join_text(help_data.to_string()).await;
         //如果未找到的功能字符串不为为空，就在末尾加上未找到的提示
-        if !unfind_help.is_empty() {
-            rep.join_text(format!("\n未找到帮助项:{}", unfind_help))
+        if !define_help.is_empty() {
+            rep.join_text(format!("\n未找到帮助项:{}", define_help))
                 .await;
         }
         //发送消息

@@ -13,6 +13,7 @@ use image::{AnimationDecoder, DynamicImage, Frame, ImageReader};
 use image::{GenericImageView, imageops};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
+use rusty_gif::DisposalMethod::Background;
 use rusty_gif::Encoder;
 use rusty_gif::Frame as GifFrame;
 use rusty_gif::Repeat::Infinite;
@@ -28,7 +29,7 @@ pub struct FlipHorizontally {
 impl FnHandler for FlipHorizontally {
     async fn matches(&self, msg: &Msg) -> bool {
         if (msg.raw_message.contains("镜像") && msg.raw_message.contains("[CQ:image,"))
-            || (msg.raw_message.starts_with("[CQ:reply,id=") && msg.raw_message.contains("]镜像"))
+            || (msg.raw_message.starts_with("[CQ:reply,id=") && msg.raw_message.contains("镜像"))
         {
             return true;
         }
@@ -44,30 +45,34 @@ impl FnHandler for FlipHorizontally {
         if fmt == Gif {
             let decoders = GifDecoder::new(Cursor::new(bytes))?;
             let frames = decoders.into_frames().collect_frames()?;
-            let new_frames: Vec<Frame> = frames
-                .into_par_iter()
-                .map(|frame| {
-                    let delay = frame.delay();
-                    let img = frame.into_buffer();
-                    let new_img = photo_process(msg, DynamicImage::from(img));
-                    Frame::from_parts(new_img.into(), 0, 0, delay)
-                })
-                .collect();
             let mut buf = Vec::new();
-            let w = new_frames[0].buffer().width() as u16;
-            let h = new_frames[0].buffer().height() as u16;
-
+            let w = frames[0].buffer().width() as u16;
+            let h = frames[0].buffer().height() as u16;
             {
                 let mut encoder = Encoder::new(&mut buf, w, h, &[])?;
                 encoder.set_repeat(Infinite)?;
+                let new_frames: Vec<rusty_gif::Frame> = frames
+                    .into_par_iter()
+                    .map(|frame| {
+                        let delay = frame.delay();
+                        let img = frame.into_buffer();
+                        let dispose = img.pixels().any(|p| p.0[3] < 255);
+                        let new_img = photo_process(msg, DynamicImage::from(img));
+                        let new_frame = Frame::from_parts(new_img.into(), 0, 0, delay);
+                        let (num, den) = new_frame.delay().numer_denom_ms();
+                        let delay = num as f64 / den as f64;
+                        let delay = (delay / 10.0).round() as u16;
+                        let mut img = new_frame.into_buffer();
+                        let mut gif_img = GifFrame::from_rgba(w, h, &mut img);
+                        gif_img.delay = delay;
+                        if dispose {
+                            gif_img.dispose = Background
+                        }
+                        gif_img
+                    })
+                    .collect();
                 for new_frame in new_frames {
-                    let (num, den) = new_frame.delay().numer_denom_ms();
-                    let delay = num as f64 / den as f64;
-                    let delay = (delay / 10.0).round() as u16;
-                    let mut img = new_frame.into_buffer();
-                    let mut gif_img = GifFrame::from_rgba(w, h, &mut img);
-                    gif_img.delay = delay;
-                    encoder.write_frame(&rusty_gif::Frame::from(gif_img))?;
+                    encoder.write_frame(&rusty_gif::Frame::from(new_frame))?;
                 }
             }
             let str = STANDARD.encode(&buf);
