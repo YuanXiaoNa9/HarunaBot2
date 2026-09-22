@@ -154,11 +154,11 @@ impl FnHandler for MemPhoto {
     }
 
     async fn help(&self, _: &str) -> String {
-        "生成遗照表情包，使用方法：\n怀念<图片>\n[回复图片]怀念".to_string()
+        "生成表情包,支持gif,支持遗照,镜像上下左右,反色,可一次性使用多个\neg:\n[回复图片]镜像右 反色 遗照\n根据指令顺序进行修改，比如eg中，先镜像右边，然后去图片的反色，最后加上遗照的边框并黑白".to_string()
     }
 
     async fn name(&self) -> String {
-        "生成遗照".to_string()
+        "生成表情包".to_string()
     }
 }
 pub async fn get_img(file_id: String) -> tungstenite::Bytes {
