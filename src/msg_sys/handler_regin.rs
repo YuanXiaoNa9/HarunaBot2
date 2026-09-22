@@ -1,4 +1,5 @@
 use crate::msg_sys::func_mod::gc_name::GCNAME;
+use crate::msg_sys::func_mod::plusone_data::PLUSONE_DATA;
 use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::func_msg::emoji_photo::MemPhoto;
@@ -33,7 +34,8 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 pub fn mod_handler_regin() -> Vec<&'static (dyn ModHandler + Send + Sync)> {
-    let handlers: Vec<&'static (dyn ModHandler + Send + Sync)> = vec![&*TTF, &*DBLINK, &*GCNAME];
+    let handlers: Vec<&'static (dyn ModHandler + Send + Sync)> =
+        vec![&*TTF, &*DBLINK, &*GCNAME, &*PLUSONE_DATA];
     handlers
 }
 
@@ -117,7 +119,6 @@ pub fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
         }),
         Box::new(PlusOne {
             status: AtomicBool::from(false),
-            map: OnceLock::new(),
         }),
     ];
     handlers

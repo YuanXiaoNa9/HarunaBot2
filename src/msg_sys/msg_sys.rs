@@ -146,16 +146,11 @@ pub async fn sub_init(handlers: &Vec<Box<dyn FnHandler + Send + Sync>>) {
 }
 
 pub async fn mod_status_examine(mut rx: tokio::sync::watch::Receiver<bool>) -> bool {
-    if *rx.borrow_and_update() {
-        true
-    } else {
-        loop {
-            let _ = rx.changed().await;
-            if *rx.borrow_and_update() {
-                return true;
-            } else {
-                continue;
-            }
+    loop {
+        if *rx.borrow() {
+            return true;
+        } else {
+            rx.changed().await.expect("TODO: panic message");
         }
     }
 }

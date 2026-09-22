@@ -1,8 +1,9 @@
 use crate::MAIN_CONFIG;
-use crate::msg_sys::msg_analysis::{Msg, MsgSender};
-use crate::msg_sys::msg_reply::Data::{Face, Image, Node, Record, Reply, Text, Video};
+use crate::msg_sys::func_mod::plusone_data::{PLUSONE_DATA, PlusOneData};
+use crate::msg_sys::msg_analysis::Msg;
+use crate::msg_sys::msg_reply::Data::{Face, Image, Node, Record, Reply, Video};
 use crate::msg_sys::msg_reply::PostType::Poke;
-use crate::qq_link::{SEND_CHAN, http_get};
+use crate::qq_link::http_get;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
@@ -94,40 +95,27 @@ impl SendMsg {
             self.message_type = "private".to_string();
         } else {
             self.message_type = "group".to_string();
+            let ok = PLUSONE_DATA.map.get(&msg.group_id).is_some_and(|map| {
+                if map.last_message != self.message {
+                    drop(map);
+                    false
+                } else {
+                    drop(map);
+                    true
+                }
+            });
+            if !ok {
+                PLUSONE_DATA.map.insert(
+                    msg.group_id,
+                    PlusOneData {
+                        last_message: self.message.clone(),
+                        user_id: msg.self_id,
+                        i: 1,
+                    },
+                );
+            }
         }
-        if self.message_type == "group" {
-            let msg = Msg {
-                time: 0,
-                self_id: msg.self_id,
-                post_type: "message".to_string(),
-                message_type: "group".to_string(),
-                sub_type: "".to_string(),
-                target_id: 0,
-                message_id: 0,
-                message_seq: 0,
-                group_id: msg.group_id,
-                group_name: "bot".to_string(),
-                user_id: msg.self_id,
-                message: "".to_string(),
-                raw_message: format!("[bot_msg]{}", self.message),
-                font: 0,
-                sender: MsgSender {
-                    user_id: msg.self_id,
-                    nickname: "bot".to_string(),
-                    card: "".to_string(),
-                    role: "".to_string(),
-                    sex: "".to_string(),
-                    age: 0,
-                },
-                notice_type: "".to_string(),
-            };
-            SEND_CHAN
-                .get()
-                .unwrap()
-                .send(serde_json::to_string(&msg).unwrap())
-                .await
-                .unwrap();
-        }
+
         debug!("try send msg");
         send(&PostType::Message(self), "/send_msg".to_string()).await;
     }

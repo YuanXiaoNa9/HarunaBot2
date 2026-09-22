@@ -1,22 +1,15 @@
+use crate::msg_sys::func_mod::plusone_data::{PLUSONE_DATA, PlusOneData};
 use crate::msg_sys::msg_reply::SendMsg;
-use crate::msg_sys::msg_sys::{FnHandler, Msg};
+use crate::msg_sys::msg_sys::{FnHandler, Msg, mod_status_examine};
 use anyhow::Error;
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
-use dashmap::DashMap;
-use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 use tracing::debug;
-
-pub struct PlusOneData {
-    last_message: String,
-    user_id: i64,
-    i: i16,
-}
 
 pub struct PlusOne {
     pub(crate) status: AtomicBool,
-    pub(crate) map: OnceLock<DashMap<i64, PlusOneData>>,
 }
 #[async_trait]
 impl FnHandler for PlusOne {
@@ -28,17 +21,12 @@ impl FnHandler for PlusOne {
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
-        let raw_message = msg
-            .raw_message
-            .clone()
-            .strip_prefix("[bot_msg]")
-            .unwrap_or(msg.raw_message.clone().as_str())
-            .to_string();
+        let raw_message = msg.raw_message.clone().to_string();
         let user_id = msg.user_id.clone();
         let self_id = msg.self_id.clone();
-        let data = match self.map.get().unwrap().get(&msg.group_id) {
+        let data = match PLUSONE_DATA.map.get(&msg.group_id) {
             None => {
-                self.map.get().unwrap().insert(
+                PLUSONE_DATA.map.insert(
                     msg.group_id,
                     PlusOneData {
                         last_message: raw_message,
@@ -52,12 +40,13 @@ impl FnHandler for PlusOne {
             Some(data) => data,
         };
         debug!(
-            "\nlast msg:\n{}\nnow msg:\n{}",
-            data.last_message, raw_message
+            "\nlast msg:\n{}\n{}\nnow msg:\n{}",
+            data.last_message, data.i, raw_message
         );
         let i = data.i;
         if data.last_message == raw_message {
             if data.user_id == self_id && i == 1 && user_id != self_id {
+                drop(data);
                 let mut rep = SendMsg::new().await;
                 rep.join_text("不要复读人家喵".to_string()).await;
                 rep.send_msg(msg).await;
@@ -67,7 +56,7 @@ impl FnHandler for PlusOne {
                 return Ok(());
             };
             drop(data);
-            self.map.get().unwrap().insert(
+            PLUSONE_DATA.map.insert(
                 msg.group_id,
                 PlusOneData {
                     last_message: raw_message,
@@ -78,7 +67,7 @@ impl FnHandler for PlusOne {
             debug!("same msg");
         } else {
             drop(data);
-            self.map.get().unwrap().insert(
+            PLUSONE_DATA.map.insert(
                 msg.group_id,
                 PlusOneData {
                     last_message: raw_message,
@@ -100,7 +89,9 @@ impl FnHandler for PlusOne {
     }
 
     async fn init(&self) {
-        let _ = self.map.set(DashMap::new());
+        let rx = PLUSONE_DATA.rx.clone();
+        mod_status_examine(rx).await;
+        self.status.store(true, Relaxed);
     }
 
     async fn status(&self) -> bool {
