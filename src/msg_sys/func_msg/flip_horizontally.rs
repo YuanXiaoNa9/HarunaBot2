@@ -28,6 +28,7 @@ pub struct FlipHorizontally {
 #[async_trait]
 impl FnHandler for FlipHorizontally {
     async fn matches(&self, msg: &Msg) -> bool {
+        
         if (msg.raw_message.contains("镜像") && msg.raw_message.contains("[CQ:image,"))
             || (msg.raw_message.starts_with("[CQ:reply,id=") && msg.raw_message.contains("镜像"))
         {

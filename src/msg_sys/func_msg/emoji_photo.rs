@@ -31,13 +31,21 @@ pub struct MemPhoto {
 #[async_trait]
 impl FnHandler for MemPhoto {
     async fn matches(&self, msg: &Msg) -> bool {
-        if msg.raw_message.starts_with("怀念[CQ:image,")
-            || msg.raw_message.starts_with("怀念\n[CQ:image,")
-            || (msg.raw_message.starts_with("[CQ:reply,id=") && msg.raw_message.ends_with("怀念"))
-        {
-            return true;
-        }
-        false
+        let start = msg.raw_message.rfind("]").unwrap();
+        let splits = msg.raw_message[start + 1 ..].split(" ");
+        let mut ok = false;
+        for s in splits {
+            if s == "怀念"
+                || s == "镜像上"
+                || s == "镜像下"
+                || s == "镜像左"
+                || s == "镜像右"
+                || s == "反色"
+            {
+                ok = true;
+            }
+        };
+        (msg.raw_message.contains("[CQ:image,") && msg.raw_message.contains("[CQ:reply,id=")) && ok
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
