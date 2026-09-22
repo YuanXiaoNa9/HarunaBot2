@@ -1,5 +1,5 @@
 use crate::PATH;
-use crate::msg_sys::msg_reply::{SendMsg, http_ip_process};
+use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use crate::qq_link::{HTTP_CLIENT, http_get};
 use anyhow::{Error, anyhow};
@@ -7,12 +7,10 @@ use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use futures_util::StreamExt;
 use image::ImageFormat::{Gif, Png};
 use image::codecs::gif::GifDecoder;
 use image::imageops::overlay;
-use image::{AnimationDecoder, DynamicImage, Frame, ImageReader};
-use imageproc::drawing::Canvas;
+use image::{AnimationDecoder, DynamicImage, Frame, GenericImageView, ImageReader, imageops};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rusty_gif::DisposalMethod::Background;
@@ -24,15 +22,24 @@ use std::io::Cursor;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use tracing::log::debug;
-
+#[derive(PartialEq)]
+enum ProcessEnum {
+    None(),
+    Die(),
+    Mirror(String),
+    Invert(),
+}
 pub struct MemPhoto {
     pub(crate) status: AtomicBool,
 }
 #[async_trait]
 impl FnHandler for MemPhoto {
     async fn matches(&self, msg: &Msg) -> bool {
-        let start = msg.raw_message.rfind("]").unwrap();
-        let splits = msg.raw_message[start + 1 ..].split(" ");
+        let start = match msg.raw_message.rfind("]"){
+            None => {return false},
+            Some(ok) => {ok}
+        };
+        let splits = msg.raw_message[start + 1..].split(" ");
         let mut ok = false;
         for s in splits {
             if s == "怀念"
@@ -44,11 +51,25 @@ impl FnHandler for MemPhoto {
             {
                 ok = true;
             }
-        };
-        (msg.raw_message.contains("[CQ:image,") && msg.raw_message.contains("[CQ:reply,id=")) && ok
+        }
+        (msg.raw_message.contains("[CQ:image,") || msg.raw_message.contains("[CQ:reply,id=")) && ok
     }
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
+        let start = msg.raw_message.rfind("]").unwrap();
+        let splits = msg.raw_message[start + 1..].split(" ");
+        let mut ways: Vec<ProcessEnum> = Vec::new();
+        for s in splits {
+            if s == "怀念" {
+                ways.push(ProcessEnum::Die())
+            } else if s == "镜像上" || s == "镜像下" || s == "镜像左" || s == "镜像右" {
+                ways.push(ProcessEnum::Mirror(s.to_string()))
+            } else if s == "反色" {
+                ways.push(ProcessEnum::Invert())
+            } else {
+                ways.push(ProcessEnum::None())
+            };
+        }
         let start = std::time::Instant::now();
         let id = get_img_id(msg).await?;
         let bytes = get_img(id).await;
@@ -56,24 +77,38 @@ impl FnHandler for MemPhoto {
         let b64: String;
         if fmt == Gif {
             let mut buf = Vec::new();
-            let (w, h) = (778u16, 777u16);
+            let decoders = GifDecoder::new(Cursor::new(bytes))?;
+            let mut frames = decoders.into_frames().collect_frames()?;
+            let mut w = frames[0].buffer().width() as u16;
+            let mut h = frames[0].buffer().height() as u16;
+            if msg.raw_message.contains("怀念") {
+                (w, h) = (778u16, 777u16);
+            }
             {
                 let mut encoder = Encoder::new(&mut buf, w, h, &[])?;
                 encoder.set_repeat(Infinite)?;
-                let decoders = GifDecoder::new(Cursor::new(bytes))?;
-                let frames = decoders.into_frames().collect_frames()?;
+                for way in ways {
+                    frames = frames
+                        .into_par_iter()
+                        .map(|frame| {
+                            let delay = frame.delay();
+                            let img = frame.into_buffer();
+                            let new_img =
+                                photo_main_process(DynamicImage::from(img), &way).unwrap();
+                            let new_frame = Frame::from_parts(new_img.into(), 0, 0, delay);
+                            new_frame
+                        })
+                        .collect();
+                }
+
                 let new_frames: Vec<rusty_gif::Frame> = frames
                     .into_par_iter()
                     .map(|frame| {
-                        let delay = frame.delay();
-                        let img = frame.into_buffer();
-                        let dispose = img.pixels().any(|p| p.0[3] < 255);
-                        let new_img = photo_process(DynamicImage::from(img)).unwrap();
-                        let new_frame = Frame::from_parts(new_img.into(), 0, 0, delay);
-                        let (num, den) = new_frame.delay().numer_denom_ms();
+                        let dispose = frame.buffer().pixels().any(|p| p.0[3] < 255);
+                        let (num, den) = frame.delay().numer_denom_ms();
                         let delay = num as f64 / den as f64;
                         let delay = (delay / 10.0).round() as u16;
-                        let mut img = new_frame.into_buffer();
+                        let mut img = frame.into_buffer();
                         let mut gif_img = GifFrame::from_rgba(w, h, &mut img);
                         gif_img.delay = delay;
                         if dispose {
@@ -82,6 +117,7 @@ impl FnHandler for MemPhoto {
                         gif_img
                     })
                     .collect();
+
                 for new_frame in new_frames {
                     encoder.write_frame(&new_frame)?;
                 }
@@ -92,9 +128,14 @@ impl FnHandler for MemPhoto {
             let img = ImageReader::new(Cursor::new(&bytes))
                 .with_guessed_format()?
                 .decode();
-            let img = img?;
-            let ground_img = photo_process(img)?;
-            b64 = img_to_base64(ground_img)?;
+            let mut img = img?;
+            for way in ways {
+                if way == ProcessEnum::None() {
+                    continue;
+                }
+                img = photo_main_process(img, &way)?;
+            }
+            b64 = img_to_base64(img)?;
         }
         let mut rep = SendMsg::new().await;
         rep.join_reply(msg.message_id).await;
@@ -138,8 +179,6 @@ pub async fn get_img_id(msg: &Msg) -> Result<String, Error> {
     #[derive(Deserialize, Debug)]
     struct ImageData {
         data: Data,
-        message: String,
-        wording: String,
         stream: String,
     }
     #[derive(Serialize, Deserialize, Debug)]
@@ -219,9 +258,21 @@ pub fn img_to_base64(pic: DynamicImage) -> Result<String, Error> {
     let b64 = STANDARD.encode(buf.into_inner());
     Ok(b64)
 }
-pub(crate) fn photo_process(img: DynamicImage) -> Result<DynamicImage, Error> {
+fn photo_main_process(
+    img: DynamicImage,
+    way: &ProcessEnum,
+) -> Result<DynamicImage, Error> {
+    let res: Result<DynamicImage, Error> = match way {
+        ProcessEnum::None() => Err(anyhow!("未知错误")),
+        ProcessEnum::Die() => photo_process_die(img),
+        ProcessEnum::Mirror(s) => Ok(photo_process_mirror(s, img)),
+        ProcessEnum::Invert() => { Ok(photo_process_invert(img)) }
+    };
+    res
+}
+fn photo_process_die(img: DynamicImage) -> Result<DynamicImage, Error> {
     let proportion: f32;
-    let (ori_x, ori_y) = img.dimensions();
+    let (ori_x, ori_y) = GenericImageView::dimensions(&img);
     if ori_x > ori_y {
         proportion = 515.0 / ori_y as f32;
     } else if ori_y > ori_x {
@@ -233,7 +284,7 @@ pub(crate) fn photo_process(img: DynamicImage) -> Result<DynamicImage, Error> {
     let mut img = img.resize(
         (ori_x as f32 * proportion) as u32,
         (ori_y as f32 * proportion) as u32,
-        image::imageops::FilterType::CatmullRom,
+        imageops::FilterType::CatmullRom,
     );
     let end_img: DynamicImage;
     if ori_x > ori_y {
@@ -247,4 +298,37 @@ pub(crate) fn photo_process(img: DynamicImage) -> Result<DynamicImage, Error> {
     let end_img = end_img.grayscale();
     overlay(&mut ground_img, &end_img, 126, 107);
     Ok(ground_img)
+}
+fn photo_process_mirror(s: &String, mut img: DynamicImage) -> DynamicImage {
+    let (width, height) = GenericImageView::dimensions(&img);
+    let half_w = width / 2;
+    let half_h = height / 2;
+    if s.contains("左") {
+        let left = imageops::crop_imm(&img, 0, 0, half_w, height).to_image();
+        let left_flipped = imageops::flip_horizontal(&left);
+        imageops::replace(&mut img, &left_flipped, half_w as i64, 0);
+    } else if s.contains("右") {
+        let right = imageops::crop_imm(&img, half_w, 0, width, height).to_image();
+        let right_flipped = imageops::flip_horizontal(&right);
+        imageops::replace(&mut img, &right_flipped, 0, 0);
+    } else if s.contains("上") {
+        let up = imageops::crop_imm(&img, 0, 0, width, half_h).to_image();
+        let up_flipped = imageops::flip_vertical(&up);
+        imageops::replace(&mut img, &up_flipped, 0, half_h as i64);
+    } else if s.contains("下") {
+        let up = imageops::crop_imm(&img, 0, half_h, width, height).to_image();
+        let up_flipped = imageops::flip_vertical(&up);
+        imageops::replace(&mut img, &up_flipped, 0, 0);
+    }
+    img
+}
+
+
+fn photo_process_invert(img: DynamicImage) -> DynamicImage {
+    let mut rgba = img.to_rgba8();
+    for pixel in &mut rgba.pixels_mut() {
+        let [r, g, b, a] = pixel.0;
+        *pixel = image::Rgba([255 - r, 255 - g, 255 - b, a]);
+    };
+    DynamicImage::ImageRgba8(rgba)
 }

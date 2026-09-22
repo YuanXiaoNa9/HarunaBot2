@@ -110,10 +110,10 @@ fn ttt_main_sys(msg: &Msg, chess_data: &DashMap<i64, Vec<ChessData>>) -> Result<
     let index = msg.raw_message.parse::<usize>()? - 1;
     chess_check(index, chess_data.get(&msg.sender.user_id).unwrap())?;
     chess_refresh(chess_data.get_mut(&msg.sender.user_id).unwrap());
-    chess_update(index, chess_data.get_mut(&msg.sender.user_id).unwrap(),1);
+    chess_update(index, chess_data.get_mut(&msg.sender.user_id).unwrap(), 1);
     let weight = chess_judgment(chess_data.get(&msg.sender.user_id).unwrap());
     let best = chess_biggest(weight);
-    chess_update(best, chess_data.get_mut(&msg.sender.user_id).unwrap(),8);
+    chess_update(best, chess_data.get_mut(&msg.sender.user_id).unwrap(), 8);
     Ok(())
 }
 
@@ -212,10 +212,10 @@ fn chess_judgment(cd: Ref<i64, Vec<ChessData>>) -> Vec<usize> {
         {
             count.fetch_add(80, Relaxed);
         }
-        if [1,3,5,7].contains(&(i)) {
+        if [1, 3, 5, 7].contains(&(i)) {
             let i = count.load(Relaxed);
             count.store(i * 2, Relaxed);
-        } else if [0,2,4,6,8].contains(&(i)) {
+        } else if [0, 2, 4, 6, 8].contains(&(i)) {
             let i = count.load(Relaxed);
             count.store(i * 3, Relaxed);
         } else {
@@ -257,7 +257,7 @@ fn chess_refresh(mut chess_data: RefMut<i64, Vec<ChessData>>) {
     }
 }
 
-fn chess_update(i: usize, mut chess_data: RefMut<i64, Vec<ChessData>> ,player:i16) {
+fn chess_update(i: usize, mut chess_data: RefMut<i64, Vec<ChessData>>, player: i16) {
     chess_data[i] = ChessData {
         chess_player: player,
         chess_hand: 1,

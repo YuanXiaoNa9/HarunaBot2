@@ -3,7 +3,6 @@ use crate::msg_sys::func_mod::postgres_db::DBLINK;
 use crate::msg_sys::func_mod::ttf::TTF;
 use crate::msg_sys::func_msg::emoji_photo::MemPhoto;
 use crate::msg_sys::func_msg::emoji_say::EmoMjk;
-use crate::msg_sys::func_msg::flip_horizontally::FlipHorizontally;
 use crate::msg_sys::func_msg::game_center_manage::GameCenterManager;
 use crate::msg_sys::func_msg::game_center_manage::gcm_add::GCMAdd;
 use crate::msg_sys::func_msg::game_center_manage::gcm_add_name::GCMAddName;
@@ -115,10 +114,6 @@ pub fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
                     status: AtomicBool::from(false),
                 }),
             ],
-        }),
-        Box::new(FlipHorizontally {
-            enabled: true,
-            status: AtomicBool::from(false),
         }),
         Box::new(PlusOne {
             status: AtomicBool::from(false),
