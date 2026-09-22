@@ -35,9 +35,9 @@ pub struct MemPhoto {
 #[async_trait]
 impl FnHandler for MemPhoto {
     async fn matches(&self, msg: &Msg) -> bool {
-        let start = match msg.raw_message.rfind("]"){
-            None => {return false},
-            Some(ok) => {ok}
+        let start = match msg.raw_message.rfind("]") {
+            None => return false,
+            Some(ok) => ok,
         };
         let splits = msg.raw_message[start + 1..].split(" ");
         let mut ok = false;
@@ -258,15 +258,12 @@ pub fn img_to_base64(pic: DynamicImage) -> Result<String, Error> {
     let b64 = STANDARD.encode(buf.into_inner());
     Ok(b64)
 }
-fn photo_main_process(
-    img: DynamicImage,
-    way: &ProcessEnum,
-) -> Result<DynamicImage, Error> {
+fn photo_main_process(img: DynamicImage, way: &ProcessEnum) -> Result<DynamicImage, Error> {
     let res: Result<DynamicImage, Error> = match way {
         ProcessEnum::None() => Err(anyhow!("未知错误")),
         ProcessEnum::Die() => photo_process_die(img),
         ProcessEnum::Mirror(s) => Ok(photo_process_mirror(s, img)),
-        ProcessEnum::Invert() => { Ok(photo_process_invert(img)) }
+        ProcessEnum::Invert() => Ok(photo_process_invert(img)),
     };
     res
 }
@@ -323,12 +320,11 @@ fn photo_process_mirror(s: &String, mut img: DynamicImage) -> DynamicImage {
     img
 }
 
-
 fn photo_process_invert(img: DynamicImage) -> DynamicImage {
     let mut rgba = img.to_rgba8();
     for pixel in &mut rgba.pixels_mut() {
         let [r, g, b, a] = pixel.0;
         *pixel = image::Rgba([255 - r, 255 - g, 255 - b, a]);
-    };
+    }
     DynamicImage::ImageRgba8(rgba)
 }

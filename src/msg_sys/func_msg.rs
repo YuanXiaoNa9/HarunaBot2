@@ -1,6 +1,5 @@
 pub mod emoji_photo;
 pub mod emoji_say;
-pub mod flip_horizontally;
 pub mod game_center_manage;
 pub mod gc_query_report;
 pub mod help;
