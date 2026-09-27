@@ -7,20 +7,23 @@ use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use gifski::collector::RGBA8;
+use gifski::progress::NoProgress;
+use gifski::{Repeat, Settings};
 use image::ImageFormat::{Gif, Png};
 use image::codecs::gif::GifDecoder;
 use image::imageops::overlay;
-use image::{AnimationDecoder, DynamicImage, Frame, GenericImageView, ImageReader, imageops};
+use image::{
+    AnimationDecoder, Delay, DynamicImage, Frame, GenericImageView, ImageReader, imageops,
+};
+use imgref::ImgVec;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
-use rusty_gif::DisposalMethod::Background;
-use rusty_gif::Encoder;
-use rusty_gif::Frame as GifFrame;
-use rusty_gif::Repeat::Infinite;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use std::thread::spawn;
 use tracing::log::debug;
 #[derive(PartialEq)]
 enum ProcessEnum {
@@ -28,6 +31,7 @@ enum ProcessEnum {
     Die(),
     Mirror(String),
     Invert(),
+    Multiple(f64),
 }
 pub struct MemPhoto {
     pub(crate) status: AtomicBool,
@@ -48,6 +52,7 @@ impl FnHandler for MemPhoto {
                 || s == "镜像左"
                 || s == "镜像右"
                 || s == "反色"
+                || s.starts_with("倍速")
             {
                 ok = true;
             }
@@ -59,6 +64,10 @@ impl FnHandler for MemPhoto {
         let start = msg.raw_message.rfind("]").unwrap();
         let splits = msg.raw_message[start + 1..].split(" ");
         let mut ways: Vec<ProcessEnum> = Vec::new();
+        let start = std::time::Instant::now();
+        let id = get_img_id(msg).await?;
+        let bytes = get_img(id).await;
+        let fmt = image::guess_format(&bytes)?;
         for s in splits {
             if s == "怀念" {
                 ways.push(ProcessEnum::Die())
@@ -66,64 +75,91 @@ impl FnHandler for MemPhoto {
                 ways.push(ProcessEnum::Mirror(s.to_string()))
             } else if s == "反色" {
                 ways.push(ProcessEnum::Invert())
+            } else if s.starts_with("倍速") {
+                if fmt != Gif {
+                    return Err(anyhow!("非gif无法使用倍速"));
+                }
+                let count = s[s.find("倍速").unwrap() + 6..]
+                    .parse::<f64>()
+                    .unwrap_or(1.0);
+                ways.push(ProcessEnum::Multiple(count));
             } else {
                 ways.push(ProcessEnum::None())
             };
         }
-        let start = std::time::Instant::now();
-        let id = get_img_id(msg).await?;
-        let bytes = get_img(id).await;
-        let fmt = image::guess_format(&bytes)?;
+
         let b64: String;
         if fmt == Gif {
-            let mut buf = Vec::new();
+            let mut buf: Vec<u8> = Vec::new();
             let decoders = GifDecoder::new(Cursor::new(bytes))?;
             let mut frames = decoders.into_frames().collect_frames()?;
             let mut w = frames[0].buffer().width() as u16;
             let mut h = frames[0].buffer().height() as u16;
+            debug!("ori_delay {:?}", frames[0].delay());
             if msg.raw_message.contains("怀念") {
                 (w, h) = (778u16, 777u16);
             }
             {
-                let mut encoder = Encoder::new(&mut buf, w, h, &[])?;
-                encoder.set_repeat(Infinite)?;
+                //处理图片业务逻辑
                 for way in ways {
                     frames = frames
                         .into_par_iter()
                         .map(|frame| {
-                            let delay = frame.delay();
+                            let delay;
+                            match way {
+                                ProcessEnum::Multiple(c) => {
+                                    let (num, den) = frame.delay().numer_denom_ms();
+                                    let new_delay = num as f64 / den as f64;
+                                    let new_delay = (new_delay / c).round() as u32;
+                                    delay = Delay::from_numer_denom_ms(new_delay, 1);
+                                }
+                                _ => {
+                                    delay = frame.delay();
+                                }
+                            }
+
                             let img = frame.into_buffer();
                             let new_img =
                                 photo_main_process(DynamicImage::from(img), &way).unwrap();
+
                             let new_frame = Frame::from_parts(new_img.into(), 0, 0, delay);
                             new_frame
                         })
                         .collect();
                 }
-
-                let new_frames: Vec<rusty_gif::Frame> = frames
-                    .into_par_iter()
-                    .map(|frame| {
-                        let dispose = frame.buffer().pixels().any(|p| p.0[3] < 255);
-                        let (num, den) = frame.delay().numer_denom_ms();
-                        let delay = num as f64 / den as f64;
-                        let delay = (delay / 10.0).round() as u16;
-                        let mut img = frame.into_buffer();
-                        let mut gif_img = GifFrame::from_rgba(w, h, &mut img);
-                        gif_img.delay = delay;
-                        if dispose {
-                            gif_img.dispose = Background
+                //创建压缩设置
+                let setting = Settings {
+                    width: Some(512),
+                    height: None,
+                    quality: 50,
+                    fast: false,
+                    repeat: Repeat::Infinite,
+                };
+                let (collector, writer) = gifski::new(setting)?;
+                //遍历压缩
+                spawn(move || {
+                    let mut pts = 0.0f64;
+                    for (i, frame) in frames.iter().enumerate() {
+                        let img = frame.clone().into_buffer();
+                        let (w, h) = img.dimensions();
+                        let raw = img.into_raw();
+                        let (n, d) = frame.delay().numer_denom_ms();
+                        let mut secs = (n as f64 / d as f64) / 1000.0;
+                        if secs <= 0.0 {
+                            secs = 0.05;
                         }
-                        gif_img
-                    })
-                    .collect();
-
-                for new_frame in new_frames {
-                    encoder.write_frame(&new_frame)?;
-                }
+                        let pixels: Vec<RGBA8> = raw
+                            .chunks_exact(4)
+                            .map(|p| RGBA8::from([p[0], p[1], p[2], p[3]]))
+                            .collect();
+                        let a: ImgVec<RGBA8> = ImgVec::new(pixels, w as usize, h as usize);
+                        collector.add_frame_rgba(i, a, pts).unwrap();
+                        pts += secs;
+                    }
+                });
+                writer.write(&mut buf, &mut NoProgress {})?;
+                b64 = STANDARD.encode(&buf);
             }
-            let str = STANDARD.encode(&buf);
-            b64 = str;
         } else {
             let img = ImageReader::new(Cursor::new(&bytes))
                 .with_guessed_format()?
@@ -264,6 +300,7 @@ fn photo_main_process(img: DynamicImage, way: &ProcessEnum) -> Result<DynamicIma
         ProcessEnum::Die() => photo_process_die(img),
         ProcessEnum::Mirror(s) => Ok(photo_process_mirror(s, img)),
         ProcessEnum::Invert() => Ok(photo_process_invert(img)),
+        ProcessEnum::Multiple(_) => Ok(photo_process_multiple(img)),
     };
     res
 }
@@ -277,7 +314,6 @@ fn photo_process_die(img: DynamicImage) -> Result<DynamicImage, Error> {
     } else {
         proportion = 515.0 / ori_x as f32;
     }
-    debug!("{}", ori_x as f32 * proportion);
     let mut img = img.resize(
         (ori_x as f32 * proportion) as u32,
         (ori_y as f32 * proportion) as u32,
@@ -327,4 +363,8 @@ fn photo_process_invert(img: DynamicImage) -> DynamicImage {
         *pixel = image::Rgba([255 - r, 255 - g, 255 - b, a]);
     }
     DynamicImage::ImageRgba8(rgba)
+}
+
+fn photo_process_multiple(img: DynamicImage) -> DynamicImage {
+    img
 }
