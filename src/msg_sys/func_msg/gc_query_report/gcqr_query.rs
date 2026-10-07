@@ -72,16 +72,11 @@ impl FnHandler for GcqrQuery {
         } else if res.len() > 1 {
             Err(anyhow!("找到多个机厅，未知错误"))
         } else {
-            let now_time = Local::now();
-            let now_secs = now_time.timestamp();
-            let now_day = now_time.date_naive().and_hms_opt(0, 0, 0).unwrap();
+            let now_day = Local::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
             let data_time = Local.timestamp_opt(res[0].report_time, 0).unwrap();
             let data_day = data_time.date_naive().and_hms_opt(0, 0, 0).unwrap();
-            debug!(
-                "{} {} {} {} {} {}",
-                res[0].report_time, now_secs, now_time, data_time, data_day, now_day
-            );
             if res[0].refresh.unwrap_or(true) && data_day != now_day {
+                let _= sqlx::query!("update gamecenterdata set headcount = 0 where gc_id = $1",gc_id).execute(&mut *tx).await?;
                 let mut rep = SendMsg::new().await;
                 rep.join_reply(msg.message_id).await;
                 rep.join_text("今天还没有上报人数".to_string()).await;

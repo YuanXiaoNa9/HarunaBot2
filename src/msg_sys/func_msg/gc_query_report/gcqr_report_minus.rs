@@ -5,7 +5,7 @@ use crate::msg_sys::msg_sys::{FnHandler, Msg};
 use anyhow::Error;
 use anyhow_trace::anyhow_trace;
 use async_trait::async_trait;
-use chrono::Local;
+use chrono::{Local, TimeZone};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use tracing::debug;
@@ -37,6 +37,7 @@ impl FnHandler for GcqrMinus {
         }
         let mut tx = DBLINK.db_link.get().unwrap().begin().await?;
         let now_time = Local::now().timestamp();
+        let now_day = Local::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
         let gc_name = msg.raw_message.split(&['-', '减']).next().unwrap();
         let id = GCNAME
             .map
@@ -45,11 +46,18 @@ impl FnHandler for GcqrMinus {
             .get(format!("{}|{}", gc_name, msg.group_id).as_str())
             .unwrap()
             .gc_id;
-        let old_headcount =
-            sqlx::query!("select headcount from gamecenterdata where gc_id = $1", id)
+        let old_data =
+            sqlx::query!("select headcount,refresh,report_time from gamecenterdata where gc_id = $1", id)
                 .fetch_one(&mut *tx)
                 .await?;
-        let new_headcount = old_headcount.headcount - minus_headcount;
+        let data_time = Local.timestamp_opt(old_data.report_time, 0).unwrap();
+        let data_day = data_time.date_naive().and_hms_opt(0, 0, 0).unwrap();
+        let headcount = if old_data.refresh.unwrap_or(true) && data_day != now_day {
+            0
+        } else {
+            old_data.headcount
+        };
+        let new_headcount = headcount - minus_headcount;
         if new_headcount < 0 {
             return Err(Error::msg("人数为负？zdjd"));
         }
