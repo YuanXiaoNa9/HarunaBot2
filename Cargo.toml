@@ -28,3 +28,5 @@ anyhow_trace = "0.1.3"
 rayon = "1.12.0"
 gifski = "1.34.0"
 imgref = "1.12.3"
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["test-util"] }

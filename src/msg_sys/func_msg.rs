@@ -7,3 +7,5 @@ pub mod play;
 pub mod plusone;
 pub(crate) mod test;
 pub mod ttt;
+
+pub mod pjsk_upload;

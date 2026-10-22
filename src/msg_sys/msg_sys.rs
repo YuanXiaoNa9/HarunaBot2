@@ -28,6 +28,8 @@ pub trait FnHandler {
     async fn init(&self);
     async fn status(&self) -> bool;
     async fn help(&self, _: &str) -> String;
+    // Default preserves existing modules; restricted modules can hide help per message.
+    async fn help_visible(&self, _: &Msg) -> bool { true }
     async fn name(&self) -> String;
 }
 

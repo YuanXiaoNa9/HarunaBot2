@@ -55,6 +55,7 @@ pub fn msg_handler_regin() -> Vec<Box<dyn FnHandler + Send + Sync>> {
         Box::new(Help {
             status: AtomicBool::from(false),
         }),
+        Box::new(crate::msg_sys::func_msg::pjsk_upload::PjskUpload::default()),
         Box::new(TTT {
             enable: false,
             status: AtomicBool::from(false),

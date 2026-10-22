@@ -1,0 +1,7 @@
+{
+  "enabled": false,
+  "bot_id": "YOUR_BOT_QQ",
+  "service_url": "http://127.0.0.1:8080",
+  "api_key_file": "/etc/pjsk-suite/api.key",
+  "allowed_groups": ["YOUR_GROUP_ID"]
+}
