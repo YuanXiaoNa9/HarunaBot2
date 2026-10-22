@@ -119,6 +119,14 @@ impl SendMsg {
         debug!("try send msg");
         send(&PostType::Message(self), "/send_msg".to_string()).await;
     }
+    // Explicit private delivery: temporary chats can carry a source group_id.
+    // Keep it as routing context without changing the message to a group reply.
+    pub async fn send_private_msg(mut self, msg: &Msg) {
+        self.message_type = "private".into();
+        self.user_id = msg.user_id;
+        self.group_id = msg.group_id;
+        send(&PostType::Message(self), "/send_private_msg".into()).await;
+    }
     pub async fn send_forward_msg(mut self, msg: &Msg) {
         if self.user_id == 0 && self.group_id == 0 {
             self.user_id = msg.sender.user_id;

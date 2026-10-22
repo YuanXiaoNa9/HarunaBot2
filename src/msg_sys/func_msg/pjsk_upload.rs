@@ -28,6 +28,7 @@ struct Client {
 enum Stage {
     Sending,
     AwaitingCode,
+    AwaitingWeb,
     Verifying,
 }
 #[derive(Clone, Debug)]
@@ -101,13 +102,22 @@ fn now() -> u64 {
 fn otp(s: &str) -> bool {
     s.len() == 6 && s.bytes().all(|b| b.is_ascii_digit())
 }
+fn private(msg: &Msg) -> bool {
+    msg.message_type == "private" || (msg.message_type.is_empty() && msg.group_id == 0)
+}
 fn key(msg: &Msg) -> (i64, i64) {
     (msg.self_id, msg.user_id)
 }
 fn command(s: &str) -> bool {
     matches!(
-        s.split_whitespace().next().unwrap_or(""),
-        "申请绑定"
+        s.split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .as_str(),
+        "账号绑定taptap"
+            | "绑定taptap"
+            | "申请绑定"
             | "绑定账号"
             | "重新授权"
             | "取消绑定"
@@ -132,7 +142,11 @@ async fn reply(msg: &Msg, text: String) {
             .replace(']', "&#93;"),
     )
     .await;
-    rep.send_msg(msg).await;
+    if private(msg) {
+        rep.send_private_msg(msg).await;
+    } else {
+        rep.send_msg(msg).await;
+    }
 }
 #[cfg(test)]
 static TEST_REPLIES: std::sync::Mutex<Vec<(i64, String)>> = std::sync::Mutex::new(Vec::new());
@@ -163,14 +177,7 @@ impl Client {
             .header("X-User-ID", msg.user_id.to_string())
             .header("X-Group-ID", msg.group_id.to_string())
             .header("X-Message-ID", msg.message_id.to_string())
-            .header(
-                "X-Scene",
-                if msg.group_id == 0 {
-                    "private"
-                } else {
-                    "group"
-                },
-            );
+            .header("X-Scene", if private(msg) { "private" } else { "group" });
         if method == reqwest::Method::POST || method == reqwest::Method::PATCH {
             request = request.json(&body);
         }
@@ -299,6 +306,9 @@ impl PjskUpload {
         let mut lines = vec![];
         if bind && job["status"] == "success" {
             let id = job["items"][0]["account_id"].as_str().unwrap_or("默认");
+            if let Some(uid) = job["items"][0]["game_id"].as_str() {
+                lines.push(format!("游戏 UID：{uid}"));
+            }
             lines.push(format!("账号 {id} 绑定成功。绑定只保存授权。\n以后发送 更新数据 即可上传默认账号；更新数据 {id} 可指定此账号，无需每次输入手机号。"));
         } else {
             lines.push(if bind {
@@ -322,17 +332,160 @@ impl PjskUpload {
                 lines.push(f.display());
             }
         }
-        lines.push(format!(
-            "任务：{}；耗时：{}ms；版本：{}",
-            job["id"].as_str().unwrap_or("未知"),
-            job["elapsed_ms"].as_i64().unwrap_or(0),
-            job["version"].as_str().unwrap_or("未知")
-        ));
+        if job["status"] != "success" {
+            lines.push(format!(
+                "任务：{}；耗时：{}ms；版本：{}",
+                job["id"].as_str().unwrap_or("未知"),
+                job["elapsed_ms"].as_i64().unwrap_or(0),
+                job["version"].as_str().unwrap_or("未知")
+            ));
+        }
         lines.join("\n")
     }
+    async fn web_bind(&self, c: &Client, msg: &Msg) -> Result<(), Fault> {
+        let k = key(msg);
+        let generation = self.next_generation();
+        let busy = {
+            use dashmap::mapref::entry::Entry;
+            match self.pending.entry(k) {
+                Entry::Occupied(mut e) => {
+                    if e.get().expires > now() {
+                        true
+                    } else {
+                        e.insert(Pending {
+                            attempt: String::new(),
+                            provider: "mkcn_taptap".into(),
+                            stage: Stage::Sending,
+                            expires: now() + 360,
+                            generation,
+                        });
+                        false
+                    }
+                }
+                Entry::Vacant(e) => {
+                    e.insert(Pending {
+                        attempt: String::new(),
+                        provider: "mkcn_taptap".into(),
+                        stage: Stage::Sending,
+                        expires: now() + 360,
+                        generation,
+                    });
+                    false
+                }
+            }
+        };
+        if busy {
+            reply(msg, "已有绑定进度，请先完成或发送：取消绑定。".into()).await;
+            return Ok(());
+        }
+        let result = self.web_flow(c, msg, generation).await;
+        // Errors/cancellation never leave orphaned authorization flows behind.
+        let pending = self
+            .pending
+            .get(&k)
+            .filter(|p| p.generation == generation)
+            .map(|p| p.attempt.clone());
+        self.remove_generation(k, generation);
+        if result.is_err() {
+            if let Some(id) = pending.filter(|s| !s.is_empty()) {
+                let _ = c
+                    .call(
+                        msg,
+                        reqwest::Method::DELETE,
+                        &format!("web-login-attempts/{id}"),
+                        Value::Null,
+                    )
+                    .await;
+            }
+        }
+        result
+    }
+    async fn web_flow(&self, c: &Client, msg: &Msg, generation: u64) -> Result<(), Fault> {
+        let attempt = c
+            .call(
+                msg,
+                reqwest::Method::POST,
+                "web-login-attempts",
+                json!({"provider":"mkcn_taptap"}),
+            )
+            .await?;
+        let id = attempt["id"]
+            .as_str()
+            .ok_or_else(Fault::unavailable)?
+            .to_owned();
+        let expires = attempt["expires"].as_u64().ok_or_else(Fault::unavailable)?;
+        let login = attempt["login_url"]
+            .as_str()
+            .ok_or_else(Fault::unavailable)?;
+        let authorize = attempt["authorize_url"]
+            .as_str()
+            .ok_or_else(Fault::unavailable)?;
+        let active = {
+            if let Some(mut p) = self.pending.get_mut(&key(msg)) {
+                if p.generation == generation {
+                    p.attempt = id.clone();
+                    p.stage = Stage::AwaitingWeb;
+                    p.expires = expires + 15;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if !active {
+            let _ = c
+                .call(
+                    msg,
+                    reqwest::Method::DELETE,
+                    &format!("web-login-attempts/{id}"),
+                    Value::Null,
+                )
+                .await;
+            return Ok(());
+        }
+        reply(msg,format!("TapTap 账号绑定\n\n① 先登录\n{login}\n\n② 登录完成后，再打开授权链接并确认\n{authorize}\n\n请在同一个 QQ 浏览器完成，两条链接顺序操作。授权链接约5分钟有效。\n确认授权后网页可能持续加载；请等待 Bot 的绑定结果，收到“绑定成功”后直接退出网页即可，不必重复点击。\n超时后可重新发送 绑定账号 TapTap；取消请发送 取消绑定。\n绑定只保存凭证，不会自动上传数据。")).await;
+        let mut interval = attempt["interval"].as_u64().unwrap_or(2).clamp(2, 60);
+        while now() < expires {
+            if !self
+                .pending
+                .get(&key(msg))
+                .is_some_and(|p| p.generation == generation)
+            {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(interval)).await;
+            let value = c
+                .call(
+                    msg,
+                    reqwest::Method::GET,
+                    &format!("web-login-attempts/{id}"),
+                    Value::Null,
+                )
+                .await?;
+            if value.get("job").is_some() {
+                let job = self.wait_job(c, msg, value["job"].clone()).await?;
+                reply(msg, Self::job_text(&job, true)).await;
+                return Ok(());
+            }
+            interval = value["interval"].as_u64().unwrap_or(interval).clamp(2, 60);
+        }
+        let _ = c
+            .call(
+                msg,
+                reqwest::Method::DELETE,
+                &format!("web-login-attempts/{id}"),
+                Value::Null,
+            )
+            .await;
+        reply(msg,"TapTap 授权等待已到期，本次未确认绑定成功。可查看 账号列表；尚未绑定请重新发送 绑定账号 TapTap 获取新链接。无需反复点击旧链接。".into()).await;
+        Ok(())
+    }
+
     async fn run(&self, c: &Client, msg: &Msg) -> Result<(), Fault> {
         // Local group check prevents any requests from unapproved groups.
-        if msg.group_id != 0 && !c.config.allowed_groups.contains(&msg.group_id.to_string()) {
+        if !private(msg) && !c.config.allowed_groups.contains(&msg.group_id.to_string()) {
             return Ok(());
         }
         if msg.self_id.to_string() != c.config.bot_id {
@@ -355,8 +508,21 @@ impl PjskUpload {
         c.call(msg, reqwest::Method::GET, "access/status", Value::Null)
             .await?;
         let first = words.first().copied().unwrap_or("");
+        if first.eq_ignore_ascii_case("账号绑定taptap")
+            || first.eq_ignore_ascii_case("绑定taptap")
+            || (first == "绑定账号"
+                && words
+                    .get(1)
+                    .is_some_and(|v| v.eq_ignore_ascii_case("taptap")))
+        {
+            if !private(msg) {
+                reply(msg, "请私聊或使用群临时会话发送：绑定账号 TapTap".into()).await;
+                return Ok(());
+            }
+            return self.web_bind(c, msg).await;
+        }
         if matches!(first, "绑定账号" | "重新授权") {
-            if msg.group_id != 0 {
+            if !private(msg) {
                 reply(msg, "请私聊发送手机号和验证码。".into()).await;
                 return Ok(());
             }
@@ -490,7 +656,7 @@ impl PjskUpload {
             return Ok(());
         }
         if first == "取消绑定" {
-            if msg.group_id != 0 {
+            if !private(msg) {
                 reply(msg, "请在私聊取消绑定。".into()).await;
                 return Ok(());
             }
@@ -500,7 +666,15 @@ impl PjskUpload {
                     c.call(
                         msg,
                         reqwest::Method::DELETE,
-                        &format!("login-attempts/{}", p.attempt),
+                        &format!(
+                            "{}/{}",
+                            if p.provider == "mkcn_taptap" {
+                                "web-login-attempts"
+                            } else {
+                                "login-attempts"
+                            },
+                            p.attempt
+                        ),
                         Value::Null,
                     )
                     .await?;
@@ -522,7 +696,14 @@ impl PjskUpload {
                         c.call(
                             msg,
                             reqwest::Method::DELETE,
-                            &format!("login-attempts/{id}"),
+                            &format!(
+                                "{}/{id}",
+                                if item["attempt"]["provider"] == "mkcn_taptap" {
+                                    "web-login-attempts"
+                                } else {
+                                    "login-attempts"
+                                }
+                            ),
                             Value::Null,
                         )
                         .await?;
@@ -541,7 +722,7 @@ impl PjskUpload {
             }
             return Ok(());
         }
-        if msg.group_id == 0 && otp(text) {
+        if private(msg) && otp(text) {
             let pending = {
                 self.pending.get_mut(&k).and_then(|mut p| {
                     if p.stage == Stage::AwaitingCode && p.expires > now() {
@@ -719,7 +900,7 @@ impl PjskUpload {
                 reply(msg, Self::job_text(&done, false)).await;
             }
             "上传帮助" => {
-                reply(msg,"先在开放群 申请绑定，再私聊 绑定账号 手机号，随后直接回复验证码。\n绑定后手动 更新数据；更新数据 编号；更新数据 全部。\n账号列表；默认账号 编号；账号备注 编号 备注；删除账号 编号；重新授权 编号 手机号；取消绑定；更新状态；重传数据。\n重传数据只重传24小时内的缓存，不重新获取游戏数据。".into()).await;
+                reply(msg,"先在开放群 申请绑定，再私聊 绑定账号 手机号，随后直接回复验证码。\nTapTap：私聊 绑定账号 TapTap，先打开登录链接完成登录，再打开授权链接确认。授权网页若持续加载，收到 Bot 绑定成功后直接退出即可。\n绑定后手动 更新数据；更新数据 编号；更新数据 全部。\n账号列表；默认账号 编号；账号备注 编号 备注；删除账号 编号；重新授权 编号 手机号；取消绑定；更新状态；重传数据。\n重传数据只重传24小时内的缓存，不重新获取游戏数据。".into()).await;
             }
             _ => {}
         }
@@ -735,12 +916,12 @@ impl FnHandler for PjskUpload {
         if command(msg.raw_message.trim()) {
             return true;
         }
-        msg.group_id == 0
+        private(msg)
             && otp(msg.raw_message.trim())
             && self
                 .pending
                 .get(&key(msg))
-                .is_some_and(|p| p.expires > now())
+                .is_some_and(|p| p.expires > now() && p.stage == Stage::AwaitingCode)
     }
     async fn process(&self, msg: &Msg) -> Result<(), anyhow::Error> {
         if let Some(c) = self.client.get() {
@@ -816,12 +997,11 @@ impl FnHandler for PjskUpload {
         self.client.get().is_some_and(|c| {
             c.config.enabled
                 && msg.self_id.to_string() == c.config.bot_id
-                && (msg.group_id == 0
-                    || c.config.allowed_groups.contains(&msg.group_id.to_string()))
+                && (private(msg) || c.config.allowed_groups.contains(&msg.group_id.to_string()))
         })
     }
     async fn help(&self, _: &str) -> String {
-        "游戏数据上传：在开放群申请绑定，再私聊绑定账号。完整指令：上传帮助。".into()
+        "游戏数据上传：在开放群申请绑定，再私聊绑定账号。TapTap 私聊：绑定账号 TapTap。完整指令：上传帮助。".into()
     }
     async fn name(&self) -> String {
         "PJSK数据上传".into()
@@ -862,6 +1042,92 @@ mod tests {
         msg.self_id = 2;
         assert!(!h.help_visible(&msg).await);
     }
+    #[tokio::test]
+    async fn web_binding_same_message_private_temp_chat_and_no_task_footer() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut paths = vec![];
+            for _ in 0..3 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                loop {
+                    let mut chunk = [0; 1024];
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&chunk[..n]);
+                    if request.windows(4).any(|x| x == b"\r\n\r\n") {
+                        break;
+                    }
+                    assert!(request.len() < 8192);
+                }
+                let headers = String::from_utf8_lossy(&request).to_lowercase();
+                assert!(headers.contains("x-scene: private"));
+                assert!(headers.contains("x-group-id: 99"));
+                let line = headers.lines().next().unwrap().to_owned();
+                paths.push(line.clone());
+                let data = if line.starts_with("get /v1/access/status ") {
+                    json!({"eligible":true})
+                } else if line.starts_with("post /v1/web-login-attempts ") {
+                    json!({"id":"attempt-test","stage":"awaiting_web","expires":now()+60,"interval":2,"login_url":"https://accounts.taptap.cn/login","authorize_url":"https://accounts.taptap.cn/authorize?user_code=demo"})
+                } else {
+                    assert!(line.starts_with("get /v1/web-login-attempts/attempt-test "));
+                    json!({"job":{"id":"internal-job-id","status":"success","deadline":now()+60,"items":[{"account_id":"1","game_id":"9000000000000000012","status":"success"}]}})
+                };
+                let body = json!({"data":data,"error":null}).to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+            paths
+        });
+        let client = Client {
+            config: Config {
+                enabled: true,
+                bot_id: "1".into(),
+                service_url: format!("http://{address}"),
+                api_key_file: String::new(),
+                allowed_groups: vec!["10".into()],
+            },
+            http: reqwest::Client::builder().no_proxy().build().unwrap(),
+            api_key: "test".into(),
+        };
+        let h = PjskUpload::default();
+        let msg = Msg {
+            self_id: 1,
+            user_id: 2,
+            group_id: 99,
+            message_type: "private".into(),
+            message_id: 987655,
+            raw_message: "绑定账号 TapTap".into(),
+            ..Default::default()
+        };
+        assert!(command("账号绑定TapTap"));
+        assert!(command("绑定账号 TapTap"));
+        tokio::time::timeout(Duration::from_secs(10), h.run(&client, &msg))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(server.await.unwrap().len(), 3);
+        let replies = TEST_REPLIES.lock().unwrap();
+        let texts: Vec<_> = replies
+            .iter()
+            .filter(|(id, _)| *id == 987655)
+            .map(|(_, t)| t.as_str())
+            .collect();
+        assert_eq!(texts.len(), 2);
+        assert!(texts[0].contains("① 先登录"));
+        assert!(texts[0].contains("网页可能持续加载"));
+        assert!(texts[1].contains("绑定成功"));
+        assert!(texts[1].contains("9000000000000000012"));
+        assert!(!texts[1].contains("internal-job-id"));
+        assert!(!h.pending.contains_key(&(1, 2)));
+    }
+
     #[test]
     fn only_exact_ascii_otp() {
         assert!(otp("123456"));
