@@ -18,7 +18,11 @@ impl PjskState {
                     .is_some_and(|v| v.eq_ignore_ascii_case("taptap")))
         {
             if !private(msg) {
-                reply(msg, "请私聊或使用群临时会话发送：绑定账号 TapTap".into()).await;
+                reply(
+                    msg,
+                    "请私聊或使用群临时会话发送：/pjsk 绑定账号 TapTap".into(),
+                )
+                .await;
                 return Ok(());
             }
             let target = if first == "重新授权" {
@@ -29,7 +33,7 @@ impl PjskState {
             if first == "重新授权" && !number(target) {
                 reply(
                     msg,
-                    "格式：重新授权 编号 TapTap\n例如：重新授权 2 TapTap".into(),
+                    "格式：/pjsk 重新授权 编号 TapTap\n例如：/pjsk 重新授权 2 TapTap".into(),
                 )
                 .await;
                 return Ok(());
@@ -56,7 +60,7 @@ impl PjskState {
             {
                 reply(
                     msg,
-                    "格式：绑定账号 手机号；或 重新授权 账号编号 手机号".into(),
+                    "格式：/pjsk 绑定账号 手机号；或 /pjsk 重新授权 账号编号 手机号".into(),
                 )
                 .await;
                 return Ok(());
@@ -94,7 +98,7 @@ impl PjskState {
             if busy {
                 reply(
                     msg,
-                    "已有绑定进度，请输入验证码或发送 终止当前绑定。".into(),
+                    "已有绑定进度，请输入验证码或发送 /pjsk 终止当前绑定。".into(),
                 )
                 .await;
                 return Ok(());
@@ -127,7 +131,7 @@ impl PjskState {
                     if current {
                         reply(
                             msg,
-                            "短信验证码已发送\n\n请在 5 分钟内直接回复六位验证码。\n请勿在群内发送手机号或验证码。\n\n放弃本次操作：终止当前绑定"
+                            "短信验证码已发送\n\n请在 5 分钟内直接回复六位验证码。\n请勿在群内发送手机号或验证码。\n\n放弃本次操作：/pjsk 终止当前绑定"
                                 .into(),
                         )
                         .await;
@@ -163,7 +167,7 @@ impl PjskState {
                                         current.stage = Stage::AwaitingCode;
                                     }
                                 }
-                                reply(msg,"已有有效的短信验证流程\n\n未重新发送短信，请直接回复六位验证码。\n放弃本次操作：终止当前绑定".into()).await;
+                                reply(msg,"已有有效的短信验证流程\n\n未重新发送短信，请直接回复六位验证码。\n放弃本次操作：/pjsk 终止当前绑定".into()).await;
                                 return Ok(());
                             }
                         }
@@ -184,7 +188,7 @@ impl PjskState {
         let k = key(msg);
         if first == "终止当前绑定" {
             if !private(msg) {
-                reply(msg, "请在私聊或群临时会话中发送：终止当前绑定".into()).await;
+                reply(msg, "请在私聊或群临时会话中发送：/pjsk 终止当前绑定".into()).await;
                 return Ok(());
             }
             let consent = self.consents.remove(&k).is_some();
@@ -243,7 +247,7 @@ impl PjskState {
                     if cancelled {
                         "当前绑定已终止。\n\n已经绑定的账号不受影响。".into()
                     } else {
-                        "没有正在进行的绑定。\n\n移除已绑定账号：解除绑定 编号".into()
+                        "没有正在进行的绑定。\n\n移除已绑定账号：/pjsk 解除绑定 编号".into()
                     },
                 )
                 .await;

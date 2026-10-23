@@ -58,7 +58,9 @@ impl Help {
         'query: for split in splits {
             for handler in handlers {
                 let name = handler.name().await;
-                if split.starts_with("help") || !handler.status().await || !split.starts_with(&name)
+                if split.to_ascii_lowercase().starts_with("help")
+                    || !handler.status().await
+                    || !split.to_ascii_lowercase().starts_with(&name.to_ascii_lowercase())
                 {
                     continue;
                 }
@@ -66,7 +68,11 @@ impl Help {
                 if !handler.help_visible(msg).await {
                     continue 'query;
                 }
-                help_data.push_str(&format!("\n\n[{}]\n{}", name, handler.help(split).await));
+                help_data.push_str(&format!(
+                    "\n\n[{}]\n{}",
+                    name,
+                    handler.help(&format!("{}{}", name, &split[name.len()..])).await
+                ));
                 continue 'query;
             }
             define_help.push_str(&format!(" {}", split));
@@ -142,7 +148,7 @@ mod tests {
             status: AtomicBool::new(true),
         };
         let handlers = items();
-        for command in ["/help", "/help PJSK数据上传", "/help PJSK数据上传 普通功能"] {
+        for command in ["/help", "/help PJSK数据上传", "/help pjsk数据上传", "/help pJsK数据上传-绑定账号", "/help PJSK数据上传 普通功能"] {
             let msg = Msg {
                 group_id: 99,
                 raw_message: command.into(),
@@ -167,7 +173,9 @@ mod tests {
             ..Default::default()
         };
         assert!(h.render(&msg, &handlers).await.contains("PJSK数据上传"));
-        msg.raw_message = "/help PJSK数据上传".into();
-        assert!(h.render(&msg, &handlers).await.contains("手机号与验证码"));
+        for query in ["/help PJSK数据上传", "/help pjsk数据上传", "/help pJsK数据上传-绑定账号"] {
+            msg.raw_message = query.into();
+            assert!(h.render(&msg, &handlers).await.contains("手机号与验证码"));
+        }
     }
 }

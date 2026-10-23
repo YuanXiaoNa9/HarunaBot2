@@ -9,7 +9,7 @@ impl PjskState {
                 .await?;
             reply(
                 msg,
-                "已取得绑定资格\n\n接下来请私聊 Bot 或使用群临时会话。\n手机号绑定：绑定账号 手机号\nTapTap 绑定：绑定账号 TapTap\n\n首次操作需同意条款；绑定成功后再手动更新。\n详细帮助：/help PJSK数据上传"
+                "已取得绑定资格\n\n接下来请私聊 Bot 或使用群临时会话。\n手机号绑定：/pjsk 绑定账号 手机号\nTapTap 绑定：/pjsk 绑定账号 TapTap\n\n首次操作需同意条款；绑定成功后再手动更新。\n详细帮助：/help PJSK数据上传"
                     .into(),
             )
             .await;

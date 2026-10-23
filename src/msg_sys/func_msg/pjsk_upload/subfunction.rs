@@ -18,7 +18,8 @@ pub(super) fn handlers(state: Arc<PjskState>) -> Vec<Box<dyn FnHandler + Send + 
 #[async_trait]
 impl FnHandler for SubCommand {
     async fn matches(&self, msg: &Msg) -> bool {
-        let first = msg.raw_message.split_whitespace().next().unwrap_or("");
+        let text = command_input(&msg.raw_message).unwrap_or(msg.raw_message.trim());
+        let first = text.split_whitespace().next().unwrap_or("");
         match self.name {
             "绑定账号" => {
                 first == "绑定账号"

@@ -120,7 +120,12 @@ impl PjskState {
                 ));
             }
             if let Ok(f) = serde_json::from_value::<Fault>(item["error"].clone()) {
-                block.push_str(&format!("\n{}", f.display()));
+                block.push_str(&format!(
+                    "\n{}",
+                    f.display_for_account(
+                        item["account_id"].as_str().or_else(|| item["id"].as_str())
+                    )
+                ));
             }
             blocks.push(block);
         }
@@ -133,9 +138,21 @@ impl PjskState {
             }
         }
         if status == "success" {
-            blocks.push(if bind{format!("已核对游戏资料并保存授权，本次未上传。\n\n更新默认账号：更新数据\n更新本账号：更新数据 {}\n以后更新无需每次重新输入手机号或验证码。",job["items"][0]["account_id"].as_str().unwrap_or("1"))}else{"数据已提交到 Sakura 公共数据服务。\n再次更新：更新数据".into()});
+            blocks.push(if bind{format!("已核对游戏资料并保存授权，本次未上传。\n\n更新默认账号：/pjsk 更新数据\n更新本账号：/pjsk 更新数据 {}\n以后更新无需每次重新输入手机号或验证码。",job["items"][0]["account_id"].as_str().unwrap_or("1"))}else{"数据已提交到 Sakura 公共数据服务。\n再次更新：/pjsk 更新数据".into()});
         } else {
-            blocks.push(if bind{"本次未保存新授权；如为重新授权，本次操作未覆盖旧凭证。\n查看账号：账号列表\n重新绑定：/help PJSK数据上传-绑定账号".into()}else{"请先发送 更新状态 查询结果，再决定是否重试。".into()});
+            let reauth = std::iter::once(&job["error"])
+                .chain(
+                    job["items"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|item| &item["error"]),
+                )
+                .any(|value| {
+                    serde_json::from_value::<Fault>(value.clone())
+                        .is_ok_and(|f| f.needs_reauthorization())
+                });
+            blocks.push(if bind{"本次未保存新授权；如为重新授权，本次操作未覆盖旧凭证。\n查看账号：/pjsk 账号列表\n重新绑定：/help PJSK数据上传-绑定账号".into()}else if reauth {"请按失败账号下方的指令重新授权，再手动更新；其他账号不受影响。".into()}else{"请先发送 /pjsk 更新状态 查询结果，再决定是否重试。".into()});
             blocks.push(format!(
                 "诊断任务：{}\n服务版本：{}",
                 job["id"].as_str().unwrap_or("未知"),

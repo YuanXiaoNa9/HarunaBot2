@@ -93,11 +93,11 @@ async fn web_binding_same_message_private_temp_chat_and_no_task_footer() {
         group_id: 99,
         message_type: "private".into(),
         message_id: 987655,
-        raw_message: "绑定账号 TapTap".into(),
+        raw_message: "/pjsk 绑定账号 TapTap".into(),
         ..Default::default()
     };
-    assert!(command("账号绑定TapTap"));
-    assert!(command("绑定账号 TapTap"));
+    assert!(command("/pjsk 账号绑定TapTap"));
+    assert!(command("/pjsk 绑定账号 TapTap"));
     tokio::time::timeout(Duration::from_secs(10), h.run(&client, &msg))
         .await
         .unwrap()
@@ -336,7 +336,11 @@ fn message(id: i64, text: &str) -> Msg {
         message_type: "private".into(),
         post_type: "message".into(),
         message_id: id,
-        raw_message: text.into(),
+        raw_message: if known_action(text) {
+            format!("/pjsk {text}")
+        } else {
+            text.into()
+        },
         ..Default::default()
     }
 }
@@ -366,7 +370,8 @@ fn normalized_commands_and_clear_account_cards() {
         "账号绑定TAPTAP",
         "绑定账号\u{3000}TaPtAp",
     ] {
-        assert!(command(text));
+        assert!(command(&format!("/pjsk {text}")));
+        assert!(!command(text));
         assert!(format_error(&text.split_whitespace().collect::<Vec<_>>()).is_none());
     }
     for text in [
@@ -582,4 +587,77 @@ async fn progress_sequence_is_not_resent_on_each_job_poll() {
     assert_eq!(server.await.unwrap().len(), 2);
     let replies = TEST_REPLIES.lock().unwrap();
     assert_eq!(replies.iter().filter(|(id, _)| *id == 990032).count(), 1);
+}
+
+#[tokio::test]
+async fn namespace_requires_separate_prefix_and_keeps_numeric_flow_isolated() {
+    let h = PjskUpload::default();
+    for text in [
+        "/pjsk 账号列表",
+        "/PjSk 更新数据 2",
+        " /pjsk\u{3000}绑定账号 taptap ",
+        "/pjsk",
+        "/pjsk 不存在",
+    ] {
+        assert!(
+            h.matches(&message(991000, text)).await,
+            "not routed: {text}"
+        );
+    }
+    for text in [
+        "账号列表",
+        "更新数据",
+        "绑定账号 TapTap",
+        "/pjsk账号列表",
+        "/pjsk-other 账号列表",
+        "123456",
+    ] {
+        let mut msg = message(991000, text);
+        msg.raw_message = text.into();
+        assert!(!h.matches(&msg).await, "unexpectedly routed: {text}");
+    }
+    assert_eq!(command_input(" /PJSK\t账号列表 "), Some("账号列表"));
+    assert_eq!(command_input("/pjsk账号列表"), None);
+    let (c, server) = scripted_client(vec![]).await;
+    assert!(h.client.set(c).is_ok());
+    for text in ["/pjsk", "/pjsk 不存在"] {
+        let err = h.process(&message(991001, text)).await.unwrap_err();
+        assert!(err.to_string().contains("/pjsk 账号列表"));
+    }
+    server.await.unwrap();
+}
+
+#[test]
+fn expired_credentials_give_account_specific_commands_without_repeating_error() {
+    let fault = json!({"stage":"game_auth","code":"REAUTH_REQUIRED","reason":"授权失效"});
+    let job = json!({"id":"task","status":"failed","error":fault,"items":[
+        {"account_id":"2","status":"failed","provider":"mkcn","error":fault},
+        {"account_id":"3","status":"success","provider":"mkcn_taptap"}
+    ]});
+    let text = PjskState::job_result(&job, false).unwrap_err().to_string();
+    for command in [
+        "/pjsk 重新授权 2 手机号",
+        "/pjsk 重新授权 2 TapTap",
+        "/pjsk 更新数据 2",
+        "/pjsk 账号列表",
+    ] {
+        assert!(
+            text.contains(command),
+            "missing recovery instruction: {command}"
+        );
+    }
+    assert_eq!(text.matches("诊断代码：REAUTH_REQUIRED").count(), 1);
+    assert!(!text.contains("/pjsk 重新授权 3"));
+    let upload: Fault =
+        serde_json::from_value(json!({"stage":"upload","code":"TRANSPORT","reason":"连接中断"}))
+            .unwrap();
+    let text = upload.to_string();
+    assert!(text.contains("/pjsk 更新状态"));
+    assert!(text.contains("/pjsk 重传数据"));
+    assert!(!text.contains("需要重新授权"));
+    let version: Fault = serde_json::from_value(
+        json!({"stage":"game_login","code":"PROFILE_OUTDATED","reason":"版本不匹配"}),
+    )
+    .unwrap();
+    assert!(!version.to_string().contains("/pjsk 重新授权"));
 }

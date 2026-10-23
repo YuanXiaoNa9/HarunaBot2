@@ -56,7 +56,7 @@ impl PjskState {
                     stage: "wait".into(),
                     code: "RESULT_UNKNOWN".into(),
                     reason: format!(
-                        "等待结果超时，当前操作结果尚未确认。\n任务：{}\n\n请发送 更新状态 查询，勿重复操作。",
+                        "等待结果超时，当前操作结果尚未确认。\n任务：{}\n\n请发送 /pjsk 更新状态 查询，勿重复操作。",
                         job["id"].as_str().unwrap_or("未知")
                     ),
                     http: None,

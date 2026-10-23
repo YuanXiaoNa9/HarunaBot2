@@ -2,7 +2,8 @@ use super::*;
 
 impl PjskState {
     pub(super) async fn run(&self, c: &Client, msg: &Msg) -> Result<(), Fault> {
-        self.run_text(c, msg, msg.raw_message.trim(), None).await
+        let text = command_input(&msg.raw_message).unwrap_or(msg.raw_message.trim());
+        self.run_text(c, msg, text, None).await
     }
     pub(super) async fn run_text(
         &self,
@@ -49,7 +50,7 @@ impl PjskState {
                 .call(msg, reqwest::Method::GET, "accounts", Value::Null)
                 .await?;
             if accounts.as_array().is_none_or(|xs| xs.is_empty()) {
-                reply(msg,"尚未绑定账号，暂时无法更新。\n\n请先私聊绑定账号：\n手机号：绑定账号 手机号\nTapTap：绑定账号 TapTap\n\n详细说明：/help PJSK数据上传-绑定账号".into()).await;
+                reply(msg,"尚未绑定账号，暂时无法更新。\n\n请先私聊绑定账号：\n手机号：/pjsk 绑定账号 手机号\nTapTap：/pjsk 绑定账号 TapTap\n\n详细说明：/help PJSK数据上传-绑定账号".into()).await;
                 return Ok(());
             }
         }

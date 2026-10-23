@@ -65,7 +65,7 @@ impl PjskState {
         if busy {
             reply(
                 msg,
-                "已有待处理流程。\n\n请先完成；如需放弃，请发送：终止当前绑定".into(),
+                "已有待处理流程。\n\n请先完成；如需放弃，请发送：/pjsk 终止当前绑定".into(),
             )
             .await;
             return Ok(false);
@@ -79,7 +79,7 @@ impl PjskState {
                 generation,
             },
         );
-        reply(msg,format!("{}\n\n条款版本：{}\n\n阅读并同意：同意条款\n不同意并终止：终止当前绑定\n\n请在 10 分钟内选择；确认前不会发送短信或申请授权链接。",body,version)).await;
+        reply(msg,format!("{}\n\n条款版本：{}\n\n阅读并同意：/pjsk 同意条款\n不同意并终止：/pjsk 终止当前绑定\n\n请在 10 分钟内选择；确认前不会发送短信或申请授权链接。",body,version)).await;
         Ok(false)
     }
     pub(super) async fn accept_consent(&self, c: &Client, msg: &Msg) -> Result<(), Fault> {

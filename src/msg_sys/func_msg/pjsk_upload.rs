@@ -65,6 +65,16 @@ impl FnHandler for PjskUpload {
                         .is_some_and(|p| p.expires > now() && p.stage == Stage::AwaitingCode)))
     }
     async fn process(&self, msg: &Msg) -> Result<(), anyhow::Error> {
+        if !self.help_visible(msg).await {
+            return Ok(());
+        }
+        if let Some(text) = command_input(&msg.raw_message) {
+            if !known_action(text) && !(private(msg) && otp(text)) {
+                return Err(Fault::invalid(
+                    "请使用 /pjsk 后接空格和操作名称。\n例如：/pjsk 账号列表\n详细帮助：/help PJSK数据上传",
+                ).into());
+            }
+        }
         sub_match_process(msg, &self.subfunction).await
     }
     async fn init(&self) {

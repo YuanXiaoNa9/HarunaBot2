@@ -165,17 +165,19 @@ pub async fn sub_help(helps: &str, handlers: &Vec<Box<dyn FnHandler + Send + Syn
     'a: for help in helps_splits {
         for subfunction in handlers {
             let name = subfunction.name().await;
-            if (subfunction.status().await && name == help) || helps.contains("all") {
+            if (subfunction.status().await && name.eq_ignore_ascii_case(help))
+                || helps.to_ascii_lowercase().contains("all")
+            {
                 let data = subfunction.help(help).await;
                 help_data.push_str(format!("<{}>\n{}\n", name, data.as_str()).as_str());
-                if !helps.contains("all") {
+                if !helps.to_ascii_lowercase().contains("all") {
                     continue 'a;
                 } else {
                     continue;
                 }
             }
         }
-        if helps.contains("all") {
+        if helps.to_ascii_lowercase().contains("all") {
             continue 'a;
         }
         unfind_help_data.push_str(format!("<{}>", help).as_str());

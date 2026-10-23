@@ -76,6 +76,16 @@ impl Fault {
         }
     }
     pub(super) fn display(&self) -> String {
+        self.display_for_account(None)
+    }
+    pub(super) fn needs_reauthorization(&self) -> bool {
+        matches!(self.code.as_str(), "REAUTH_REQUIRED" | "SESSION_EXPIRED")
+            || self
+                .cause
+                .as_ref()
+                .is_some_and(|cause| cause.needs_reauthorization())
+    }
+    pub(super) fn display_for_account(&self, account: Option<&str>) -> String {
         if let Some(report) = &self.report {
             return report.clone();
         }
@@ -98,7 +108,13 @@ impl Fault {
                     .unwrap_or_default()
             ));
         }
-        let advice = match self.code.as_str() {
+        let account = account.filter(|s| number(s)).unwrap_or("编号");
+        let advice = if self.needs_reauthorization() {
+            format!(
+                "登录凭证已失效，需要重新授权。请私聊 Bot 或使用群临时会话操作：\n\n手机号账号：\n/pjsk 重新授权 {account} 手机号\n收到短信后，直接回复六位验证码。\n\nTapTap 账号：\n/pjsk 重新授权 {account} TapTap\n按 Bot 提供的链接完成登录和授权。\n\n请使用原游戏账号；授权成功后再发送：\n/pjsk 更新数据 {account}\n\n查看编号和登录方式：/pjsk 账号列表"
+            )
+        } else {
+            match self.code.as_str() {
             "PROFILE_OUTDATED" | "CLIENT_UPDATE_REQUIRED" | "VERSION_DISCOVERY_FAILED" => {
                 "请维护者检查游戏版本和配套 app-hash 配置，无需反复绑定或申请验证码。"
             }
@@ -106,22 +122,22 @@ impl Fault {
                 "请私聊重新发送绑定或更新指令，阅读并同意当前条款。"
             }
             "NO_ACCOUNT" | "NO_TARGET" => {
-                "查看账号：账号列表\n绑定说明：/help PJSK数据上传-绑定账号"
+                "查看账号：/pjsk 账号列表\n绑定说明：/help PJSK数据上传-绑定账号"
             }
             "WRONG_CODE" => "请核对短信验证码后重新发送；不要连续申请短信。",
             "SERVICE_UNAVAILABLE" | "RESULT_UNKNOWN" | "UPLOAD_OUTCOME_UNKNOWN" => {
-                "结果可能尚未确认，请稍后发送 更新状态，勿连续重试。"
+                "结果可能尚未确认，请稍后发送 /pjsk 更新状态，勿连续重试。"
             }
-            "REAUTH_REQUIRED" | "SESSION_EXPIRED" => {
-                "请使用 重新授权 编号 手机号，TapTap 账号使用 重新授权 编号 TapTap。"
-            }
+            "AUTH_EXPIRED" | "AUTH_REJECTED" if self.stage == "taptap" =>
+                "本次网页授权已过期或未完成。请重新发送原来的 /pjsk 绑定账号 TapTap 或 /pjsk 重新授权 编号 TapTap，获取新链接；不要继续点击旧链接。",
             "INVALID_COMMAND" => "详细帮助：/help PJSK数据上传",
             _ if self.stage == "upload" => {
-                "游戏数据已获取，但上传未完成；请先查询 更新状态，再决定是否重传数据。"
+                "游戏数据已获取，但上传未完成。\n先查看结果：/pjsk 更新状态\n确认上传失败且缓存仍有效后：/pjsk 重传数据\n缓存失效时：/pjsk 更新数据"
             }
             _ => "需要帮助：/help PJSK数据上传；请将以下诊断信息提供给维护者。",
+        }.into()
         };
-        blocks.push(advice.into());
+        blocks.push(advice);
         blocks.push(format!(
             "诊断代码：{}{}{}",
             self.code,

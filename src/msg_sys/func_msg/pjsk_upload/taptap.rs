@@ -34,7 +34,11 @@ impl PjskState {
             }
         };
         if busy {
-            reply(msg, "已有绑定进度，请先完成或发送：终止当前绑定。".into()).await;
+            reply(
+                msg,
+                "已有绑定进度，请先完成或发送：/pjsk 终止当前绑定。".into(),
+            )
+            .await;
             return Ok(());
         }
         let result = self.web_flow(c, msg, generation, target).await;
@@ -110,7 +114,7 @@ impl PjskState {
                 .await;
             return Ok(());
         }
-        reply(msg,format!("TapTap 账号绑定\n\n① 先登录\n{login}\n\n② 登录完成后，再打开授权链接并确认\n{authorize}\n\n请直接在手机 QQ 内打开，依次操作两条链接，并使用同一个内置网页窗口。无需安装 QQ浏览器软件。授权链接约5分钟有效。\n确认授权后网页可能持续加载；Bot 仍会继续核对账号资料。\n收到“绑定成功”后即可关闭网页，不必重复点击。\n超时后可重新发送 绑定账号 TapTap；取消请发送 终止当前绑定。\n绑定会读取游戏资料核对昵称和 UID，不会自动上传。")).await;
+        reply(msg,format!("TapTap 账号绑定\n\n① 先登录\n{login}\n\n② 登录完成后，再打开授权链接并确认\n{authorize}\n\n请直接在手机 QQ 内打开，依次操作两条链接，并使用同一个内置网页窗口。无需安装 QQ浏览器软件。授权链接约5分钟有效。\n确认授权后网页可能持续加载；Bot 仍会继续核对账号资料。\n收到“绑定成功”后即可关闭网页，不必重复点击。\n超时后可重新发送 /pjsk 绑定账号 TapTap；取消请发送 /pjsk 终止当前绑定。\n绑定会读取游戏资料核对昵称和 UID，不会自动上传。")).await;
         let mut interval = attempt["interval"].as_u64().unwrap_or(2).clamp(2, 60);
         while now() < expires {
             if !self
@@ -144,7 +148,7 @@ impl PjskState {
                 Value::Null,
             )
             .await;
-        reply(msg,"TapTap 授权等待已到期，本次未确认绑定成功。可查看 账号列表；尚未绑定请重新发送 绑定账号 TapTap 获取新链接。无需反复点击旧链接。".into()).await;
+        reply(msg,"TapTap 授权等待已到期，本次未确认绑定成功。可查看 /pjsk 账号列表；尚未绑定请重新发送 /pjsk 绑定账号 TapTap 获取新链接。无需反复点击旧链接。".into()).await;
         Ok(())
     }
 }
