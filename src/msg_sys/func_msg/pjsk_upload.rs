@@ -1,4 +1,5 @@
-//! Suite upload interaction only. Each process call owns its final reply.
+mod help;
+// Suite upload interaction only. Each process call owns its final reply.
 #[cfg(not(test))]
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
@@ -26,6 +27,7 @@ struct Client {
 }
 #[derive(Clone, Debug, PartialEq)]
 enum Stage {
+    AwaitingConsent,
     Sending,
     AwaitingCode,
     AwaitingWeb,
@@ -42,7 +44,16 @@ struct Pending {
 #[derive(Clone)]
 struct DeleteConfirmation {
     account: String,
+    revision: String,
+    display: String,
     expires: u64,
+}
+#[derive(Clone)]
+struct ConsentIntent {
+    command: String,
+    version: String,
+    expires: u64,
+    generation: u64,
 }
 #[derive(Default)]
 pub struct PjskUpload {
@@ -51,6 +62,7 @@ pub struct PjskUpload {
     pending: Arc<DashMap<(i64, i64), Pending>>,
     deletes: DashMap<(i64, i64), DeleteConfirmation>,
     generation: AtomicU64,
+    consents: Arc<DashMap<(i64, i64), ConsentIntent>>,
 }
 #[derive(Deserialize)]
 struct Envelope {
@@ -82,15 +94,115 @@ impl Fault {
     }
     fn display(&self) -> String {
         format!(
-            "{}\n阶段：{}；代码：{}；HTTP：{}；上游码：{}",
+            "操作未完成\n\n{}\n\n{}\n\n诊断信息\n阶段：{}\n代码：{}{}{}",
             self.reason,
+            match self.code.as_str() {
+                "CONSENT_REQUIRED" => "请私聊重新发送绑定或更新指令，阅读并同意当前条款。",
+                "NO_ACCOUNT" | "NO_TARGET" =>
+                    "查看账号：账号列表\n绑定说明：/help PJSK数据上传-绑定账号",
+                "WRONG_CODE" => "请核对短信验证码后重新发送；不要连续申请短信。",
+                "SERVICE_UNAVAILABLE" | "RESULT_UNKNOWN" =>
+                    "结果可能尚未确认，请稍后发送 更新状态，勿连续重试。",
+                _ => "请根据提示处理；需要帮助：/help PJSK数据上传",
+            },
             self.stage,
             self.code,
             self.http
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| "无".into()),
-            self.upstream.as_deref().unwrap_or("无")
+                .map(|n| format!("\nHTTP：{n}"))
+                .unwrap_or_default(),
+            self.upstream
+                .as_ref()
+                .map(|s| format!("\n上游码：{s}"))
+                .unwrap_or_default()
         )
+    }
+}
+fn number(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+}
+fn line(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect()
+}
+fn account_block(a: &Value) -> String {
+    let id = a["id"]
+        .as_str()
+        .or_else(|| a["account_id"].as_str())
+        .unwrap_or("?");
+    let name = a["nickname"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("暂未获取");
+    let provider = match a["provider"].as_str() {
+        Some("mkcn") => "手机号",
+        Some("mkcn_taptap") => "TapTap",
+        Some("mkcn_bilibili") => "B站",
+        _ => "未知",
+    };
+    let mut text = format!(
+        "编号：{}{}\n游戏昵称：{}\nUID：{}\n登录方式：{}",
+        line(id),
+        if a["default"] == true {
+            "（默认）"
+        } else {
+            ""
+        },
+        line(name),
+        line(a["game_id"].as_str().unwrap_or("暂未获取")),
+        provider
+    );
+    if let Some(remark) = a["remark"].as_str().filter(|s| !s.is_empty()) {
+        text.push_str(&format!("\n备注：{}", line(remark)));
+    }
+    text
+}
+fn format_error(words: &[&str]) -> Option<String> {
+    let first = words.first().copied().unwrap_or("");
+    let phone = |s: &str| s.len() == 11 && s.starts_with('1') && number(s);
+    let (valid, usage) = match first {
+        "绑定账号" => (
+            words.len() == 2 && (phone(words[1]) || words[1].eq_ignore_ascii_case("taptap")),
+            "绑定账号 手机号\n或：绑定账号 TapTap",
+        ),
+        "重新授权" => (
+            words.len() == 3
+                && number(words[1])
+                && (phone(words[2]) || words[2].eq_ignore_ascii_case("taptap")),
+            "重新授权 编号 手机号\n或：重新授权 编号 TapTap",
+        ),
+        "解除绑定" | "确认解除绑定" | "默认账号" => (
+            words.len() == 2 && number(words[1]),
+            "指令后填写一个账号编号；先发送 账号列表 查看",
+        ),
+        "账号备注" => (
+            words.len() >= 2 && number(words[1]),
+            "账号备注 编号 备注内容",
+        ),
+        "更新数据" => (
+            words.len() == 1
+                || (words.len() == 2 && (number(words[1]) || matches!(words[1], "全部" | "all"))),
+            "更新数据\n或：更新数据 编号\n或：更新数据 全部",
+        ),
+        "申请绑定" | "账号列表" | "更新状态" | "重传数据" | "同意条款" | "终止当前绑定" => {
+            (words.len() == 1, "本指令无需填写其他内容")
+        }
+        _ if first.eq_ignore_ascii_case("账号绑定taptap")
+            || first.eq_ignore_ascii_case("绑定taptap") =>
+        {
+            (words.len() == 1, "绑定账号 TapTap")
+        }
+        _ => return None,
+    };
+    if valid {
+        None
+    } else {
+        Some(format!(
+            "指令格式不正确\n\n{usage}\n\n详细说明：/help PJSK数据上传"
+        ))
     }
 }
 fn now() -> u64 {
@@ -120,16 +232,16 @@ fn command(s: &str) -> bool {
             | "申请绑定"
             | "绑定账号"
             | "重新授权"
-            | "取消绑定"
+            | "终止当前绑定"
             | "账号列表"
             | "更新数据"
             | "默认账号"
             | "账号备注"
-            | "删除账号"
-            | "确认删除账号"
+            | "解除绑定"
+            | "确认解除绑定"
             | "更新状态"
             | "重传数据"
-            | "上传帮助"
+            | "同意条款"
     )
 }
 #[cfg(not(test))]
@@ -181,6 +293,9 @@ impl Client {
         if method == reqwest::Method::POST || method == reqwest::Method::PATCH {
             request = request.json(&body);
         }
+        if method == reqwest::Method::DELETE && path.starts_with("accounts/") {
+            request = request.header("If-Match", body["revision"].as_str().unwrap_or(""));
+        }
         let response = request.send().await.map_err(|_| Fault::unavailable())?;
         let success = response.status().is_success();
         let envelope = response
@@ -197,6 +312,144 @@ impl Client {
     }
 }
 impl PjskUpload {
+    async fn ensure_consent(&self, c: &Client, msg: &Msg, command: &str) -> Result<bool, Fault> {
+        let terms = c
+            .call(msg, reqwest::Method::GET, "terms", Value::Null)
+            .await?;
+        if terms["accepted"] == true {
+            return Ok(true);
+        }
+        if !private(msg) {
+            reply(
+                msg,
+                "需要确认使用条款。\n\n请私聊 Bot 或使用群临时会话，重新发送本次指令。".into(),
+            )
+            .await;
+            return Ok(false);
+        }
+        let version = terms["version"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(Fault::unavailable)?
+            .to_owned();
+        let body = terms["text"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(Fault::unavailable)?
+            .to_owned();
+        let k = key(msg);
+        let generation = self.next_generation();
+        let busy = {
+            use dashmap::mapref::entry::Entry;
+            match self.pending.entry(k) {
+                Entry::Occupied(mut e) => {
+                    if e.get().expires > now() {
+                        true
+                    } else {
+                        e.insert(Pending {
+                            attempt: String::new(),
+                            provider: String::new(),
+                            stage: Stage::AwaitingConsent,
+                            expires: now() + 600,
+                            generation,
+                        });
+                        false
+                    }
+                }
+                Entry::Vacant(e) => {
+                    e.insert(Pending {
+                        attempt: String::new(),
+                        provider: String::new(),
+                        stage: Stage::AwaitingConsent,
+                        expires: now() + 600,
+                        generation,
+                    });
+                    false
+                }
+            }
+        };
+        if busy {
+            reply(
+                msg,
+                "已有待处理流程。\n\n请先完成；如需放弃，请发送：终止当前绑定".into(),
+            )
+            .await;
+            return Ok(false);
+        }
+        self.consents.insert(
+            k,
+            ConsentIntent {
+                command: command.into(),
+                version: version.clone(),
+                expires: now() + 600,
+                generation,
+            },
+        );
+        reply(msg,format!("{}\n\n条款版本：{}\n\n阅读并同意：同意条款\n不同意并终止：终止当前绑定\n\n请在 10 分钟内选择；确认前不会发送短信或申请授权链接。",body,version)).await;
+        Ok(false)
+    }
+    async fn accept_consent(&self, c: &Client, msg: &Msg) -> Result<(), Fault> {
+        if !private(msg) {
+            reply(msg, "请在私聊或群临时会话中确认条款。".into()).await;
+            return Ok(());
+        }
+        let k = key(msg);
+        let intent = self
+            .consents
+            .get(&k)
+            .filter(|v| v.expires > now())
+            .map(|v| v.clone());
+        let Some(intent) = intent else {
+            reply(
+                msg,
+                "没有等待确认的操作，或确认已过期。\n\n请重新发送绑定或更新指令，阅读当前条款。"
+                    .into(),
+            )
+            .await;
+            return Ok(());
+        };
+        let claimed = self.pending.get_mut(&k).is_some_and(|mut p| {
+            if p.generation == intent.generation
+                && p.stage == Stage::AwaitingConsent
+                && p.expires > now()
+            {
+                p.stage = Stage::Sending;
+                true
+            } else {
+                false
+            }
+        });
+        if !claimed {
+            reply(msg, "本次确认已在处理或已终止，请勿重复发送。".into()).await;
+            return Ok(());
+        }
+        if let Err(f) = c
+            .call(
+                msg,
+                reqwest::Method::POST,
+                "consents",
+                json!({"version":intent.version}),
+            )
+            .await
+        {
+            if f.code == "TERMS_CHANGED" {
+                self.remove_generation(k, intent.generation);
+                self.consents
+                    .remove_if(&k, |_, v| v.generation == intent.generation);
+                self.ensure_consent(c, msg, &intent.command).await?;
+                return Ok(());
+            }
+            if let Some(mut p) = self.pending.get_mut(&k) {
+                if p.generation == intent.generation {
+                    p.stage = Stage::AwaitingConsent;
+                }
+            }
+            return Err(f);
+        }
+        self.consents
+            .remove_if(&k, |_, v| v.generation == intent.generation);
+        Box::pin(self.run_text(c, msg, &intent.command, Some(intent.generation))).await
+    }
     fn next_generation(&self) -> u64 {
         self.generation.fetch_add(1, Ordering::Relaxed) + 1
     }
@@ -264,7 +517,8 @@ impl PjskUpload {
             if !warned && start.elapsed() >= Duration::from_secs(60) {
                 reply(
                     msg,
-                    "本次处理已超过60秒，仍在等待结果，请勿重复操作。".into(),
+                    "仍在处理中\n\n已等待超过 60 秒，请勿重复发送指令。\n处理结束后会回复结果。"
+                        .into(),
                 )
                 .await;
                 warned = true;
@@ -274,7 +528,7 @@ impl PjskUpload {
                     stage: "wait".into(),
                     code: "RESULT_UNKNOWN".into(),
                     reason: format!(
-                        "等待结果超时，无法确认是否已上传。任务：{}，可发送 更新状态 查询。",
+                        "等待结果超时，当前操作结果尚未确认。\n任务：{}\n\n请发送 更新状态 查询，勿重复操作。",
                         job["id"].as_str().unwrap_or("未知")
                     ),
                     http: None,
@@ -303,46 +557,62 @@ impl PjskUpload {
         }
     }
     fn job_text(job: &Value, bind: bool) -> String {
-        let mut lines = vec![];
-        if bind && job["status"] == "success" {
-            let id = job["items"][0]["account_id"].as_str().unwrap_or("默认");
-            if let Some(uid) = job["items"][0]["game_id"].as_str() {
-                lines.push(format!("游戏 UID：{uid}"));
-            }
-            lines.push(format!("账号 {id} 绑定成功。绑定只保存授权。\n以后发送 更新数据 即可上传默认账号；更新数据 {id} 可指定此账号，无需每次输入手机号。"));
-        } else {
-            lines.push(if bind {
-                "绑定未完成".into()
-            } else {
-                format!("更新任务：{}", job["status"].as_str().unwrap_or("未知"))
-            });
-            if let Some(items) = job["items"].as_array() {
-                for it in items {
-                    lines.push(format!(
-                        "账号 {}：{}",
-                        it["account_id"].as_str().unwrap_or("?"),
-                        it["status"].as_str().unwrap_or("未知")
-                    ));
-                    if let Ok(f) = serde_json::from_value::<Fault>(it["error"].clone()) {
-                        lines.push(f.display());
-                    }
+        let bind = bind || job["kind"] == "bind";
+        let status = job["status"].as_str().unwrap_or("unknown");
+        let label = match status {
+            "success" => {
+                if bind {
+                    "绑定成功"
+                } else {
+                    "更新成功"
                 }
             }
-            if let Ok(f) = serde_json::from_value::<Fault>(job["error"].clone()) {
-                lines.push(f.display());
+            "running" => "正在处理",
+            "queued" => "等待处理",
+            "cancelled" => "操作已终止",
+            _ => {
+                if bind {
+                    "绑定失败"
+                } else {
+                    "更新未完成"
+                }
             }
+        };
+        let mut blocks = vec![label.to_string()];
+        for item in job["items"].as_array().into_iter().flatten() {
+            let mut block = account_block(item);
+            if status != "success" {
+                block.push_str(&format!(
+                    "\n结果：{}",
+                    match item["status"].as_str() {
+                        Some("success") => "成功",
+                        Some("queued") => "等待处理",
+                        Some("running") => "正在处理",
+                        _ => "未完成",
+                    }
+                ));
+            }
+            if let Ok(f) = serde_json::from_value::<Fault>(item["error"].clone()) {
+                block.push_str(&format!("\n{}", f.display()));
+            }
+            blocks.push(block);
         }
-        if job["status"] != "success" {
-            lines.push(format!(
-                "任务：{}；耗时：{}ms；版本：{}",
+        if let Ok(f) = serde_json::from_value::<Fault>(job["error"].clone()) {
+            blocks.push(f.display());
+        }
+        if status == "success" {
+            blocks.push(if bind{format!("已核对游戏资料并保存授权，本次未上传。\n\n更新默认账号：更新数据\n更新本账号：更新数据 {}\n以后更新无需每次重新输入手机号或验证码。",job["items"][0]["account_id"].as_str().unwrap_or("1"))}else{"数据已提交到 Sakura 公共数据服务。\n再次更新：更新数据".into()});
+        } else {
+            blocks.push(if bind{"本次未保存新授权；如为重新授权，本次操作未覆盖旧凭证。\n查看账号：账号列表\n重新绑定：/help PJSK数据上传-绑定账号".into()}else{"请先发送 更新状态 查询结果，再决定是否重试。".into()});
+            blocks.push(format!(
+                "诊断任务：{}\n服务版本：{}",
                 job["id"].as_str().unwrap_or("未知"),
-                job["elapsed_ms"].as_i64().unwrap_or(0),
                 job["version"].as_str().unwrap_or("未知")
             ));
         }
-        lines.join("\n")
+        blocks.join("\n\n")
     }
-    async fn web_bind(&self, c: &Client, msg: &Msg) -> Result<(), Fault> {
+    async fn web_bind(&self, c: &Client, msg: &Msg, target: &str) -> Result<(), Fault> {
         let k = key(msg);
         let generation = self.next_generation();
         let busy = {
@@ -375,10 +645,10 @@ impl PjskUpload {
             }
         };
         if busy {
-            reply(msg, "已有绑定进度，请先完成或发送：取消绑定。".into()).await;
+            reply(msg, "已有绑定进度，请先完成或发送：终止当前绑定。".into()).await;
             return Ok(());
         }
-        let result = self.web_flow(c, msg, generation).await;
+        let result = self.web_flow(c, msg, generation, target).await;
         // Errors/cancellation never leave orphaned authorization flows behind.
         let pending = self
             .pending
@@ -400,13 +670,19 @@ impl PjskUpload {
         }
         result
     }
-    async fn web_flow(&self, c: &Client, msg: &Msg, generation: u64) -> Result<(), Fault> {
+    async fn web_flow(
+        &self,
+        c: &Client,
+        msg: &Msg,
+        generation: u64,
+        target: &str,
+    ) -> Result<(), Fault> {
         let attempt = c
             .call(
                 msg,
                 reqwest::Method::POST,
                 "web-login-attempts",
-                json!({"provider":"mkcn_taptap"}),
+                json!({"provider":"mkcn_taptap","target":target}),
             )
             .await?;
         let id = attempt["id"]
@@ -445,7 +721,7 @@ impl PjskUpload {
                 .await;
             return Ok(());
         }
-        reply(msg,format!("TapTap 账号绑定\n\n① 先登录\n{login}\n\n② 登录完成后，再打开授权链接并确认\n{authorize}\n\n请在同一个 QQ 浏览器完成，两条链接顺序操作。授权链接约5分钟有效。\n确认授权后网页可能持续加载；请等待 Bot 的绑定结果，收到“绑定成功”后直接退出网页即可，不必重复点击。\n超时后可重新发送 绑定账号 TapTap；取消请发送 取消绑定。\n绑定只保存凭证，不会自动上传数据。")).await;
+        reply(msg,format!("TapTap 账号绑定\n\n① 先登录\n{login}\n\n② 登录完成后，再打开授权链接并确认\n{authorize}\n\n请直接在手机 QQ 内打开，依次操作两条链接，并使用同一个内置网页窗口。无需安装 QQ浏览器软件。授权链接约5分钟有效。\n确认授权后网页可能持续加载；Bot 仍会继续核对账号资料。\n收到“绑定成功”后即可关闭网页，不必重复点击。\n超时后可重新发送 绑定账号 TapTap；取消请发送 终止当前绑定。\n绑定会读取游戏资料核对昵称和 UID，不会自动上传。")).await;
         let mut interval = attempt["interval"].as_u64().unwrap_or(2).clamp(2, 60);
         while now() < expires {
             if !self
@@ -484,6 +760,15 @@ impl PjskUpload {
     }
 
     async fn run(&self, c: &Client, msg: &Msg) -> Result<(), Fault> {
+        self.run_text(c, msg, msg.raw_message.trim(), None).await
+    }
+    async fn run_text(
+        &self,
+        c: &Client,
+        msg: &Msg,
+        input: &str,
+        resume: Option<u64>,
+    ) -> Result<(), Fault> {
         // Local group check prevents any requests from unapproved groups.
         if !private(msg) && !c.config.allowed_groups.contains(&msg.group_id.to_string()) {
             return Ok(());
@@ -491,15 +776,19 @@ impl PjskUpload {
         if msg.self_id.to_string() != c.config.bot_id {
             return Ok(());
         }
-        let text = msg.raw_message.trim();
+        let text = input.trim();
         let words: Vec<&str> = text.split_whitespace().collect();
         let k = key(msg);
+        if let Some(text) = format_error(&words) {
+            reply(msg, text).await;
+            return Ok(());
+        }
         if words.first() == Some(&"申请绑定") {
             c.call(msg, reqwest::Method::POST, "access/apply", json!({}))
                 .await?;
             reply(
                 msg,
-                "已开通绑定资格。请私聊发送：绑定账号 手机号。绑定成功后，使用 更新数据 上传。"
+                "已取得绑定资格\n\n接下来请私聊 Bot 或使用群临时会话。\n手机号绑定：绑定账号 手机号\nTapTap 绑定：绑定账号 TapTap\n\n首次操作需同意条款；绑定成功后再手动更新。\n详细帮助：/help PJSK数据上传"
                     .into(),
             )
             .await;
@@ -507,9 +796,45 @@ impl PjskUpload {
         }
         c.call(msg, reqwest::Method::GET, "access/status", Value::Null)
             .await?;
+        if let Some(g) = resume {
+            let active = self
+                .pending
+                .get(&k)
+                .is_some_and(|p| p.generation == g && p.expires > now());
+            if !active {
+                reply(msg, "操作已终止，未继续发起登录。".into()).await;
+                return Ok(());
+            }
+            self.remove_generation(k, g);
+        }
         let first = words.first().copied().unwrap_or("");
+        if first == "同意条款" {
+            return self.accept_consent(c, msg).await;
+        }
+        if matches!(first, "更新数据" | "重传数据") {
+            let accounts = c
+                .call(msg, reqwest::Method::GET, "accounts", Value::Null)
+                .await?;
+            if accounts.as_array().is_none_or(|xs| xs.is_empty()) {
+                reply(msg,"尚未绑定账号，暂时无法更新。\n\n请先私聊绑定账号：\n手机号：绑定账号 手机号\nTapTap：绑定账号 TapTap\n\n详细说明：/help PJSK数据上传-绑定账号".into()).await;
+                return Ok(());
+            }
+        }
+        let login = matches!(first, "绑定账号" | "重新授权")
+            || first.eq_ignore_ascii_case("账号绑定taptap")
+            || first.eq_ignore_ascii_case("绑定taptap");
+        if (login || matches!(first, "更新数据" | "重传数据"))
+            && resume.is_none()
+            && !self.ensure_consent(c, msg, text).await?
+        {
+            return Ok(());
+        }
         if first.eq_ignore_ascii_case("账号绑定taptap")
             || first.eq_ignore_ascii_case("绑定taptap")
+            || (first == "重新授权"
+                && words
+                    .get(2)
+                    .is_some_and(|v| v.eq_ignore_ascii_case("taptap")))
             || (first == "绑定账号"
                 && words
                     .get(1)
@@ -519,7 +844,20 @@ impl PjskUpload {
                 reply(msg, "请私聊或使用群临时会话发送：绑定账号 TapTap".into()).await;
                 return Ok(());
             }
-            return self.web_bind(c, msg).await;
+            let target = if first == "重新授权" {
+                words.get(1).copied().unwrap_or("")
+            } else {
+                ""
+            };
+            if first == "重新授权" && !number(target) {
+                reply(
+                    msg,
+                    "格式：重新授权 编号 TapTap\n例如：重新授权 2 TapTap".into(),
+                )
+                .await;
+                return Ok(());
+            }
+            return self.web_bind(c, msg, target).await;
         }
         if matches!(first, "绑定账号" | "重新授权") {
             if !private(msg) {
@@ -577,7 +915,11 @@ impl PjskUpload {
                 }
             };
             if busy {
-                reply(msg, "已有绑定进度，请输入验证码或发送 取消绑定。".into()).await;
+                reply(
+                    msg,
+                    "已有绑定进度，请输入验证码或发送 终止当前绑定。".into(),
+                )
+                .await;
                 return Ok(());
             }
             let result = c
@@ -608,7 +950,7 @@ impl PjskUpload {
                     if current {
                         reply(
                             msg,
-                            "验证码已发送，请在5分钟内直接回复六位验证码。取消请发送 取消绑定。"
+                            "短信验证码已发送\n\n请在 5 分钟内直接回复六位验证码。\n请勿在群内发送手机号或验证码。\n\n放弃本次操作：终止当前绑定"
                                 .into(),
                         )
                         .await;
@@ -644,7 +986,7 @@ impl PjskUpload {
                                         current.stage = Stage::AwaitingCode;
                                     }
                                 }
-                                reply(msg,"检测到有效的验证码进度，未重新发送短信。请继续输入验证码，或发送 取消绑定。".into()).await;
+                                reply(msg,"已有有效的短信验证流程\n\n未重新发送短信，请直接回复六位验证码。\n放弃本次操作：终止当前绑定".into()).await;
                                 return Ok(());
                             }
                         }
@@ -655,11 +997,12 @@ impl PjskUpload {
             };
             return Ok(());
         }
-        if first == "取消绑定" {
+        if first == "终止当前绑定" {
             if !private(msg) {
-                reply(msg, "请在私聊取消绑定。".into()).await;
+                reply(msg, "请在私聊或群临时会话中发送：终止当前绑定".into()).await;
                 return Ok(());
             }
+            let consent = self.consents.remove(&k).is_some();
             let p = self.pending.remove(&k).map(|(_, p)| p);
             if let Some(p) = p {
                 if !p.attempt.is_empty() {
@@ -679,7 +1022,7 @@ impl PjskUpload {
                     )
                     .await?;
                 }
-                reply(msg, "本次绑定已取消。".into()).await;
+                reply(msg, "当前绑定已终止。\n\n已经绑定的账号不受影响。".into()).await;
             } else {
                 // A Bot restart or lost begin reply can leave only the backend state.
                 let active = c
@@ -690,7 +1033,7 @@ impl PjskUpload {
                         Value::Null,
                     )
                     .await?;
-                let mut cancelled = false;
+                let mut cancelled = consent;
                 for item in active.as_array().into_iter().flatten() {
                     if let Some(id) = item["attempt"]["id"].as_str() {
                         c.call(
@@ -713,9 +1056,9 @@ impl PjskUpload {
                 reply(
                     msg,
                     if cancelled {
-                        "本次绑定已取消。".into()
+                        "当前绑定已终止。\n\n已经绑定的账号不受影响。".into()
                     } else {
-                        "没有进行中的绑定。".into()
+                        "没有正在进行的绑定。\n\n移除已绑定账号：解除绑定 编号".into()
                     },
                 )
                 .await;
@@ -789,34 +1132,36 @@ impl PjskUpload {
                 let xs = c
                     .call(msg, reqwest::Method::GET, "accounts", Value::Null)
                     .await?;
-                let mut lines = vec![];
-                for a in xs.as_array().into_iter().flatten() {
-                    lines.push(format!(
-                        "{}{}：{} {}（游戏ID {}）",
-                        a["id"].as_str().unwrap_or("?"),
-                        if a["default"] == true {
-                            " [默认]"
-                        } else {
-                            ""
-                        },
-                        a["phone"].as_str().unwrap_or(""),
-                        a["remark"].as_str().unwrap_or(""),
-                        a["game_id"].as_str().unwrap_or("")
-                    ));
-                }
-                reply(
-                    msg,
-                    if lines.is_empty() {
-                        "尚未绑定账号。请私聊：绑定账号 手机号".into()
-                    } else {
-                        lines.join("\n")
-                    },
-                )
-                .await;
+                let accounts = xs.as_array().cloned().unwrap_or_default();
+                let text = if accounts.is_empty() {
+                    "尚未绑定账号。\n\n手机号绑定：绑定账号 手机号\nTapTap 绑定：绑定账号 TapTap\n详细说明：/help PJSK数据上传-绑定账号".into()
+                } else {
+                    format!(
+                        "已绑定账号：{} 个\n\n{}\n\n更新默认账号：更新数据\n更新指定账号：更新数据 编号\n管理指令：/help PJSK数据上传",
+                        accounts.len(),
+                        accounts
+                            .iter()
+                            .map(account_block)
+                            .collect::<Vec<_>>()
+                            .join("\n\n")
+                    )
+                };
+                reply(msg, text).await;
             }
             "默认账号" | "账号备注" => {
                 let Some(id) = words.get(1) else {
                     reply(msg, "请填写账号编号，可用 账号列表 查看。".into()).await;
+                    return Ok(());
+                };
+                let accounts = c
+                    .call(msg, reqwest::Method::GET, "accounts", Value::Null)
+                    .await?;
+                let acc = accounts
+                    .as_array()
+                    .and_then(|xs| xs.iter().find(|a| a["id"] == *id))
+                    .cloned();
+                let Some(mut acc) = acc else {
+                    reply(msg, "没有找到该账号。\n\n查看编号：账号列表".into()).await;
                     return Ok(());
                 };
                 let body = if first == "默认账号" {
@@ -824,43 +1169,99 @@ impl PjskUpload {
                 } else {
                     json!({"remark":words.get(2..).unwrap_or(&[]).join(" ")})
                 };
-                c.call(msg, reqwest::Method::PATCH, &format!("accounts/{id}"), body)
-                    .await?;
-                reply(msg, "账号设置已保存。".into()).await;
+                c.call(
+                    msg,
+                    reqwest::Method::PATCH,
+                    &format!("accounts/{id}"),
+                    body.clone(),
+                )
+                .await?;
+                if first == "默认账号" {
+                    acc["default"] = json!(true);
+                } else {
+                    acc["remark"] = body["remark"].clone();
+                }
+                reply(
+                    msg,
+                    format!(
+                        "账号设置已保存\n\n{}\n\n查看所有账号：账号列表",
+                        account_block(&acc)
+                    ),
+                )
+                .await;
             }
-            "删除账号" => {
-                let Some(id) = words.get(1) else {
-                    reply(msg, "格式：删除账号 编号".into()).await;
+            "解除绑定" => {
+                if !private(msg) {
+                    reply(msg, "请在私聊或群临时会话中解除绑定。".into()).await;
+                    return Ok(());
+                }
+                let id = words.get(1).copied().unwrap_or("");
+                if !number(id) || words.len() != 2 {
+                    reply(
+                        msg,
+                        "格式：解除绑定 编号\n例如：解除绑定 2\n\n查看编号：账号列表".into(),
+                    )
+                    .await;
+                    return Ok(());
+                }
+                let xs = c
+                    .call(msg, reqwest::Method::GET, "accounts", Value::Null)
+                    .await?;
+                let acc = xs
+                    .as_array()
+                    .and_then(|xs| xs.iter().find(|a| a["id"] == id));
+                let Some(acc) = acc else {
+                    reply(msg, "没有找到该账号。\n\n请发送 账号列表 核对编号。".into()).await;
                     return Ok(());
                 };
+                let display = account_block(acc);
+                let revision = acc["revision"]
+                    .as_str()
+                    .ok_or_else(Fault::unavailable)?
+                    .to_owned();
                 self.deletes.insert(
                     k,
                     DeleteConfirmation {
-                        account: id.to_string(),
+                        account: id.into(),
+                        revision,
+                        display: display.clone(),
                         expires: now() + 60,
                     },
                 );
-                reply(msg,format!("这只会删除本地账号和授权，不会删除游戏账号或网站数据。60秒内发送 确认删除账号 {id} 确认。默认账号被删除后将选取剩余最早的账号。")).await;
+                reply(msg,format!("请确认解除绑定\n\n{display}\n\n仅移除本工具内的凭证和缓存，不删除游戏账号或已上传数据。\n移除默认账号后，剩余最早绑定的账号会成为默认账号。\n\n确认请在 60 秒内发送：确认解除绑定 {id}\n放弃操作请等待本次确认过期。")).await;
             }
-            "确认删除账号" => {
-                let confirmed = self.deletes.remove(&k).is_some_and(|(_, p)| {
-                    p.expires > now() && words.get(1).is_some_and(|id| *id == p.account)
-                });
-                if !confirmed {
-                    reply(msg, "没有匹配的删除确认，或确认已过期。".into()).await;
+            "确认解除绑定" => {
+                if !private(msg) {
+                    reply(msg, "请在私聊或群临时会话中确认。".into()).await;
                     return Ok(());
                 }
-                let id = words[1];
+                let confirmation = self.deletes.remove(&k).map(|(_, p)| p).filter(|p| {
+                    p.expires > now()
+                        && words.len() == 2
+                        && words.get(1).is_some_and(|id| *id == p.account)
+                });
+                let Some(p) = confirmation else {
+                    reply(
+                        msg,
+                        "没有匹配的解除绑定确认，或确认已过期。\n\n请重新发送：解除绑定 编号"
+                            .into(),
+                    )
+                    .await;
+                    return Ok(());
+                };
                 c.call(
                     msg,
                     reqwest::Method::DELETE,
-                    &format!("accounts/{id}"),
-                    Value::Null,
+                    &format!("accounts/{}", p.account),
+                    json!({"revision":p.revision}),
                 )
                 .await?;
                 reply(
                     msg,
-                    "本地账号已删除。可发送 账号列表 查看当前默认账号。".into(),
+                    format!(
+                        "已解除绑定\n\n{}\n\n本工具内的凭证和缓存已移除。\n查看剩余账号：账号列表",
+                        p.display
+                    ),
                 )
                 .await;
             }
@@ -898,9 +1299,6 @@ impl PjskUpload {
                     .await?;
                 let done = self.wait_job(c, msg, j).await?;
                 reply(msg, Self::job_text(&done, false)).await;
-            }
-            "上传帮助" => {
-                reply(msg,"先在开放群 申请绑定，再私聊 绑定账号 手机号，随后直接回复验证码。\nTapTap：私聊 绑定账号 TapTap，先打开登录链接完成登录，再打开授权链接确认。授权网页若持续加载，收到 Bot 绑定成功后直接退出即可。\n绑定后手动 更新数据；更新数据 编号；更新数据 全部。\n账号列表；默认账号 编号；账号备注 编号 备注；删除账号 编号；重新授权 编号 手机号；取消绑定；更新状态；重传数据。\n重传数据只重传24小时内的缓存，不重新获取游戏数据。".into()).await;
             }
             _ => {}
         }
@@ -982,11 +1380,13 @@ impl FnHandler for PjskUpload {
         }
         self.ready.store(true, Ordering::Relaxed);
         let map = self.pending.clone();
+        let intents = self.consents.clone();
         tokio::spawn(async move {
             let mut timer = tokio::time::interval(Duration::from_secs(30));
             loop {
                 timer.tick().await;
                 map.retain(|_, p| p.expires > now());
+                intents.retain(|_, p| p.expires > now());
             }
         });
     }
@@ -1000,8 +1400,8 @@ impl FnHandler for PjskUpload {
                 && (private(msg) || c.config.allowed_groups.contains(&msg.group_id.to_string()))
         })
     }
-    async fn help(&self, _: &str) -> String {
-        "游戏数据上传：在开放群申请绑定，再私聊绑定账号。TapTap 私聊：绑定账号 TapTap。完整指令：上传帮助。".into()
+    async fn help(&self, query: &str) -> String {
+        help::render(query).await
     }
     async fn name(&self) -> String {
         "PJSK数据上传".into()
@@ -1049,7 +1449,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let mut paths = vec![];
-            for _ in 0..3 {
+            for _ in 0..4 {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let mut request = Vec::new();
                 loop {
@@ -1069,6 +1469,8 @@ mod tests {
                 paths.push(line.clone());
                 let data = if line.starts_with("get /v1/access/status ") {
                     json!({"eligible":true})
+                } else if line.starts_with("get /v1/terms ") {
+                    json!({"accepted":true})
                 } else if line.starts_with("post /v1/web-login-attempts ") {
                     json!({"id":"attempt-test","stage":"awaiting_web","expires":now()+60,"interval":2,"login_url":"https://accounts.taptap.cn/login","authorize_url":"https://accounts.taptap.cn/authorize?user_code=demo"})
                 } else {
@@ -1112,7 +1514,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(server.await.unwrap().len(), 3);
+        assert_eq!(server.await.unwrap().len(), 4);
         let replies = TEST_REPLIES.lock().unwrap();
         let texts: Vec<_> = replies
             .iter()
@@ -1272,5 +1674,255 @@ mod tests {
             1
         );
         server.abort();
+    }
+    async fn scripted_client(
+        script: Vec<(&'static str, Value)>,
+    ) -> (Client, tokio::task::JoinHandle<Vec<String>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut captured = Vec::new();
+            for (expected, data) in script {
+                let (mut stream, _) =
+                    tokio::time::timeout(Duration::from_secs(5), listener.accept())
+                        .await
+                        .unwrap()
+                        .unwrap();
+                let mut request = Vec::new();
+                let end;
+                loop {
+                    let mut chunk = [0; 1024];
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&chunk[..n]);
+                    if let Some(i) = request.windows(4).position(|b| b == b"\r\n\r\n") {
+                        end = i + 4;
+                        break;
+                    }
+                    assert!(request.len() < 16384);
+                }
+                let header = String::from_utf8_lossy(&request[..end]).to_lowercase();
+                assert!(
+                    header.starts_with(expected),
+                    "unexpected request: {}",
+                    header.lines().next().unwrap()
+                );
+                let len = header
+                    .lines()
+                    .find_map(|s| {
+                        s.strip_prefix("content-length:")
+                            .and_then(|s| s.trim().parse::<usize>().ok())
+                    })
+                    .unwrap_or(0);
+                while request.len() < end + len {
+                    let mut chunk = [0; 1024];
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&chunk[..n]);
+                }
+                captured.push(String::from_utf8_lossy(&request).into_owned());
+                let body = json!({"data":data,"error":null}).to_string();
+                stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).as_bytes()).await.unwrap();
+            }
+            captured
+        });
+        (
+            Client {
+                config: Config {
+                    enabled: true,
+                    bot_id: "1".into(),
+                    service_url: format!("http://{address}"),
+                    api_key_file: String::new(),
+                    allowed_groups: vec!["10".into()],
+                },
+                http: reqwest::Client::builder().no_proxy().build().unwrap(),
+                api_key: "test".into(),
+            },
+            server,
+        )
+    }
+    fn message(id: i64, text: &str) -> Msg {
+        Msg {
+            self_id: 1,
+            user_id: 2,
+            message_type: "private".into(),
+            post_type: "message".into(),
+            message_id: id,
+            raw_message: text.into(),
+            ..Default::default()
+        }
+    }
+    #[tokio::test]
+    async fn hierarchy_uses_sub_help_and_lists_each_instruction() {
+        let h = PjskUpload::default();
+        let root = h.help("PJSK数据上传").await;
+        for name in ["绑定账号", "终止当前绑定", "解除绑定", "使用条款"] {
+            assert!(root.contains(name));
+        }
+        assert!(!root.contains("上传帮助"));
+        assert!(root.contains("/help <主功能>-<子功能>"));
+        let detail = h.help("PJSK数据上传-绑定账号-解除绑定").await;
+        assert!(detail.contains("<绑定账号>"));
+        assert!(detail.contains("<解除绑定>"));
+        assert!(detail.contains("确认解除绑定 2"));
+        let all = h.help("PJSK数据上传-all").await;
+        assert!(all.contains("<使用条款>"));
+        assert!(h.help("PJSK数据上传-不存在").await.contains("未找到子功能"));
+    }
+    #[test]
+    fn normalized_commands_and_clear_account_cards() {
+        for text in [
+            "绑定账号 taptap",
+            "绑定账号 TAPTAP",
+            "绑定账号 TaPtAp",
+            "账号绑定TAPTAP",
+            "绑定账号\u{3000}TaPtAp",
+        ] {
+            assert!(command(text));
+            assert!(format_error(&text.split_whitespace().collect::<Vec<_>>()).is_none());
+        }
+        for text in [
+            "绑定账号",
+            "绑定账号 TapTap 多余参数",
+            "解除绑定",
+            "解除绑定 abc",
+            "更新数据 1 多余参数",
+        ] {
+            assert!(format_error(&text.split_whitespace().collect::<Vec<_>>()).is_some());
+        }
+        for text in ["删除账号 1", "取消绑定", "上传帮助"] {
+            assert!(!command(text));
+        }
+        let card = account_block(
+            &json!({"id":"2","nickname":"小李\n管理员\u{0001}","game_id":"9000000000000000001","provider":"mkcn_taptap","default":true,"remark":"日常\r使用"}),
+        );
+        assert!(card.starts_with("编号：2（默认）\n游戏昵称：小李 管理员\nUID："));
+        assert!(card.contains("登录方式：TapTap\n备注：日常 使用"));
+        assert!(!card.contains('\u{0001}'));
+        assert!(account_block(&json!({"id":"1","provider":"mkcn"})).contains("游戏昵称：暂未获取"));
+        let latest = PjskUpload::job_text(
+            &json!({"kind":"bind","status":"success","id":"internal","items":[{"account_id":"2","nickname":"小李","game_id":"123","provider":"mkcn_taptap"}]}),
+            false,
+        );
+        assert!(latest.starts_with("绑定成功"));
+        assert!(!latest.contains("internal"));
+    }
+    #[tokio::test]
+    async fn consent_resumes_phone_binding_in_second_message_and_never_treats_digits_as_consent() {
+        let (c, server) = scripted_client(vec![
+            ("get /v1/access/status ", json!({"eligible":true})),
+            (
+                "get /v1/terms ",
+                json!({"version":"v1","text":"测试条款","accepted":false}),
+            ),
+            ("get /v1/access/status ", json!({"eligible":true})),
+            ("post /v1/consents ", json!({"version":"v1"})),
+            ("get /v1/access/status ", json!({"eligible":true})),
+            (
+                "post /v1/login-attempts ",
+                json!({"id":"sms-new","expires":now()+300}),
+            ),
+        ])
+        .await;
+        let h = PjskUpload::default();
+        h.run(&c, &message(990001, "绑定账号 13000000000"))
+            .await
+            .unwrap();
+        assert_eq!(
+            h.pending.get(&(1, 2)).unwrap().stage,
+            Stage::AwaitingConsent
+        );
+        assert!(!h.matches(&message(990002, "123456")).await);
+        let mut other = message(990003, "同意条款");
+        other.user_id = 3;
+        h.accept_consent(&c, &other).await.unwrap();
+        assert!(h.consents.contains_key(&(1, 2)));
+        h.run(&c, &message(990004, "同意条款")).await.unwrap();
+        assert_eq!(h.pending.get(&(1, 2)).unwrap().stage, Stage::AwaitingCode);
+        assert!(!h.consents.contains_key(&(1, 2)));
+        let requests = server.await.unwrap();
+        assert!(requests[5].contains("13000000000"));
+        assert!(
+            !requests[..5]
+                .iter()
+                .any(|r| r.starts_with("POST /v1/login-attempts"))
+        );
+        let replies = TEST_REPLIES.lock().unwrap();
+        assert!(
+            replies
+                .iter()
+                .any(|(id, t)| *id == 990001 && t.contains("同意条款"))
+        );
+        assert!(
+            replies
+                .iter()
+                .any(|(id, t)| *id == 990004 && t.contains("短信验证码已发送"))
+        );
+    }
+    #[tokio::test]
+    async fn terminating_or_expiring_consent_never_starts_login() {
+        let (c, server) = scripted_client(vec![
+            ("get /v1/access/status ", json!({"eligible":true})),
+            (
+                "get /v1/terms ",
+                json!({"version":"v1","text":"测试条款","accepted":false}),
+            ),
+            ("get /v1/access/status ", json!({"eligible":true})),
+        ])
+        .await;
+        let h = PjskUpload::default();
+        h.run(&c, &message(990010, "绑定账号 taptap"))
+            .await
+            .unwrap();
+        let mut group = message(990011, "终止当前绑定");
+        group.message_type = "group".into();
+        group.group_id = 99;
+        h.run(&c, &group).await.unwrap();
+        assert!(h.consents.contains_key(&(1, 2)));
+        h.run(&c, &message(990012, "终止当前绑定")).await.unwrap();
+        h.accept_consent(&c, &message(990013, "同意条款"))
+            .await
+            .unwrap();
+        assert!(h.pending.is_empty());
+        assert!(h.consents.is_empty());
+        assert_eq!(server.await.unwrap().len(), 3);
+        h.consents.insert(
+            (1, 2),
+            ConsentIntent {
+                command: "绑定账号 taptap".into(),
+                version: "v1".into(),
+                expires: now() - 1,
+                generation: 100,
+            },
+        );
+        h.accept_consent(&c, &message(990014, "同意条款"))
+            .await
+            .unwrap();
+        assert!(h.pending.is_empty());
+    }
+    #[tokio::test]
+    async fn unbind_confirms_the_displayed_account_revision() {
+        let account = json!({"id":"2","nickname":"小李","game_id":"123","provider":"mkcn_taptap","revision":"confirmed-revision"});
+        let (c, server) = scripted_client(vec![
+            ("get /v1/access/status ", json!({"eligible":true})),
+            ("get /v1/accounts ", json!([account])),
+            ("get /v1/access/status ", json!({"eligible":true})),
+            ("delete /v1/accounts/2 ", json!({"deleted":true})),
+        ])
+        .await;
+        let h = PjskUpload::default();
+        h.run(&c, &message(990020, "解除绑定 2")).await.unwrap();
+        h.run(&c, &message(990021, "确认解除绑定 2")).await.unwrap();
+        let requests = server.await.unwrap();
+        assert!(
+            requests[3]
+                .to_lowercase()
+                .contains("if-match: confirmed-revision")
+        );
+        let replies = TEST_REPLIES.lock().unwrap();
+        let text = &replies.iter().find(|(id, _)| *id == 990020).unwrap().1;
+        assert!(text.contains("游戏昵称：小李\nUID：123"));
+        assert!(text.contains("确认解除绑定 2"));
     }
 }

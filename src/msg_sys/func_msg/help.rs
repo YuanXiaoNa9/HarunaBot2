@@ -25,7 +25,11 @@ impl FnHandler for Help {
         let mut rep = SendMsg::new().await;
         rep.join_reply(msg.message_id).await;
         rep.join_text(text).await;
-        rep.send_msg(msg).await;
+        if msg.message_type == "private" {
+            rep.send_private_msg(msg).await;
+        } else {
+            rep.send_msg(msg).await;
+        }
         Ok(())
     }
 
@@ -47,7 +51,7 @@ impl FnHandler for Help {
 
 impl Help {
     async fn render(&self, msg: &Msg, handlers: &[Box<dyn FnHandler + Send + Sync>]) -> String {
-        let mut splits = msg.raw_message.split(' ');
+        let mut splits = msg.raw_message.split_whitespace();
         splits.next();
         let mut define_help = String::new();
         let mut help_data = String::new();
