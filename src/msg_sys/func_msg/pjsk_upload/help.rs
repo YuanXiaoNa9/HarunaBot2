@@ -1,7 +1,7 @@
 use super::*;
 use crate::msg_sys::msg_sys::sub_help;
 
-const ITEMS: &[(&str, &str)] = &[
+pub(super) const ITEMS: &[(&str, &str)] = &[
     (
         "申请绑定",
         "用途：取得使用资格。\n使用位置：已开放本功能的群聊。\n指令：申请绑定\n\n取得资格后，请私聊 Bot 或通过群临时会话绑定账号。",
@@ -51,31 +51,7 @@ const ITEMS: &[(&str, &str)] = &[
         "仅绑定本人账号或已获明确授权的账号。\n登录凭证需加密保存，以便后续更新。原始消息日志可能记录手机号和验证码。\n绑定时读取资料但不上传；手动更新将提交 Suite 至 Sakura 公共数据服务。\n非官方工具可能受风控、版本、网络影响，不能保证零风险或持续可用。\n解除绑定仅移除本工具内的凭证与缓存，不能删除已上传的公共数据。\n\n首次绑定或条款实质更新时，会显示当前完整条款。\n阅读后发送 同意条款 继续；不同意可发送 终止当前绑定。",
     ),
 ];
-struct HelpItem(&'static str, &'static str);
-#[async_trait]
-impl FnHandler for HelpItem {
-    async fn matches(&self, _: &Msg) -> bool {
-        false
-    }
-    async fn process(&self, _: &Msg) -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-    async fn init(&self) {}
-    async fn status(&self) -> bool {
-        true
-    }
-    async fn help(&self, _: &str) -> String {
-        self.1.into()
-    }
-    async fn name(&self) -> String {
-        self.0.into()
-    }
-}
-pub(super) async fn render(query: &str) -> String {
-    let items = ITEMS
-        .iter()
-        .map(|(name, text)| Box::new(HelpItem(name, text)) as Box<dyn FnHandler + Send + Sync>)
-        .collect();
+pub(super) async fn render(query: &str, items: &Vec<Box<dyn FnHandler + Send + Sync>>) -> String {
     if let Some(missing) = query
         .split('-')
         .skip(1)
@@ -86,7 +62,7 @@ pub(super) async fn render(query: &str) -> String {
             line(missing)
         );
     }
-    let details = sub_help(query, &items)
+    let details = sub_help(query, items)
         .await
         .replace("机厅管理-添加-删除", "PJSK数据上传-绑定账号-更新数据");
     if query.contains('-') {

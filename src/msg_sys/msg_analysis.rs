@@ -83,7 +83,11 @@ async fn msg_dispatch(msg: Msg) {
             let mut rep = SendMsg::new().await;
             rep.join_reply(msg.message_id).await;
             rep.join_text(format!("{:#}", err).to_string()).await;
-            rep.send_msg(&msg).await;
+            if msg.message_type == "private" {
+                rep.send_private_msg(&msg).await;
+            } else {
+                rep.send_msg(&msg).await;
+            }
         }
         return;
     }
