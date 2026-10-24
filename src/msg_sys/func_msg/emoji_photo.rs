@@ -1,3 +1,5 @@
+mod sold_out;
+
 use crate::PATH;
 use crate::msg_sys::msg_reply::SendMsg;
 use crate::msg_sys::msg_sys::{FnHandler, Msg};
@@ -31,6 +33,7 @@ enum ProcessEnum {
     Die(),
     Mirror(String),
     Invert(),
+    SoldOut(),
     Multiple(f64),
 }
 pub struct MemPhoto {
@@ -39,6 +42,9 @@ pub struct MemPhoto {
 #[async_trait]
 impl FnHandler for MemPhoto {
     async fn matches(&self, msg: &Msg) -> bool {
+        if sold_out::message_commands(&msg.raw_message).is_some() {
+            return true;
+        }
         let start = match msg.raw_message.rfind("]") {
             None => return false,
             Some(ok) => ok,
@@ -52,6 +58,7 @@ impl FnHandler for MemPhoto {
                 || s == "镜像左"
                 || s == "镜像右"
                 || s == "反色"
+                || s == "卖掉了"
                 || s.starts_with("倍速")
             {
                 ok = true;
@@ -62,7 +69,8 @@ impl FnHandler for MemPhoto {
     #[anyhow_trace]
     async fn process(&self, msg: &Msg) -> Result<(), Error> {
         let start = msg.raw_message.rfind("]").unwrap();
-        let splits = msg.raw_message[start + 1..].split(" ");
+        let sold_commands = sold_out::message_commands(&msg.raw_message);
+        let splits = sold_commands.as_deref().unwrap_or(&msg.raw_message[start + 1..]).split(" ");
         let mut ways: Vec<ProcessEnum> = Vec::new();
         let start = std::time::Instant::now();
         let id = get_img_id(msg).await?;
@@ -73,6 +81,8 @@ impl FnHandler for MemPhoto {
                 ways.push(ProcessEnum::Die())
             } else if s == "镜像上" || s == "镜像下" || s == "镜像左" || s == "镜像右" {
                 ways.push(ProcessEnum::Mirror(s.to_string()))
+            } else if s == "卖掉了" {
+                ways.push(ProcessEnum::SoldOut())
             } else if s == "反色" {
                 ways.push(ProcessEnum::Invert())
             } else if s.starts_with("倍速") {
@@ -189,8 +199,11 @@ impl FnHandler for MemPhoto {
         self.status.load(Relaxed)
     }
 
-    async fn help(&self, _: &str) -> String {
-        "生成表情包,支持gif,支持遗照,镜像上下左右,反色,可一次性使用多个\neg:\n[回复图片]镜像右 反色 遗照\n根据指令顺序进行修改，比如eg中，先镜像右边，然后去图片的反色，最后加上遗照的边框并黑白".to_string()
+    async fn help(&self, query: &str) -> String {
+        if query.split('-').skip(1).any(|name| name == "卖掉了") {
+            return sold_out::HELP.into();
+        }
+        "生成表情包,支持gif,支持遗照,镜像上下左右,反色,可一次性使用多个\neg:\n[回复图片]镜像右 反色 遗照\n根据指令顺序进行修改，比如eg中，先镜像右边，然后去图片的反色，最后加上遗照的边框并黑白\n\n卖掉了：[回复图片]卖掉了\n详细说明：/help 生成表情包-卖掉了".to_string()
     }
 
     async fn name(&self) -> String {
@@ -300,6 +313,7 @@ fn photo_main_process(img: DynamicImage, way: &ProcessEnum) -> Result<DynamicIma
         ProcessEnum::Die() => photo_process_die(img),
         ProcessEnum::Mirror(s) => Ok(photo_process_mirror(s, img)),
         ProcessEnum::Invert() => Ok(photo_process_invert(img)),
+        ProcessEnum::SoldOut() => sold_out::apply(img),
         ProcessEnum::Multiple(_) => Ok(photo_process_multiple(img)),
     };
     res
